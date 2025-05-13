@@ -1,0 +1,30 @@
+identity:
+  name: find-newsee-store
+  author: delldi
+  label:
+    en_US: find-newsee-store
+    zh_Hans: find-newsee-store
+    pt_BR: find-newsee-store
+description:
+  human:
+    en_US: 指标 组织 项目 房产 的一个校准或者检索器
+    zh_Hans: 指标 组织 项目 房产 的一个校准或者检索器
+    pt_BR: 指标 组织 项目 房产 的一个校准或者检索器
+  llm: 指标 组织 项目 房产 的一个校准或者检索器
+parameters:
+  - name: query
+    type: string
+    required: true
+    label:
+      en_US: Query string
+      zh_Hans: 查询语句
+      pt_BR: Query string
+    human_description:
+      en_US: 指标 组织 项目 房产 的一个校准或者检索器
+      zh_Hans: 指标 组织 项目 房产 的一个校准或者检索器
+      pt_BR: 指标 组织 项目 房产 的一个校准或者检索器
+    llm_description: 指标 组织 项目 房产 的一个校准或者检索器
+    form: llm
+extra:
+  python:
+    source: tools/find-newsee-store.py
