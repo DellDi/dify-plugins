@@ -1,16 +1,14 @@
 identity:
-  name: find-newsee-store
+  name: fetch-store
   author: delldi
   label:
-    en_US: find-newsee-store
-    zh_Hans: find-newsee-store
-    pt_BR: find-newsee-store
+    en_US: search
+    zh_Hans: 检索
 description:
   human:
-    en_US: 指标 组织 项目 房产 的一个校准或者检索器
+    en_US: target/project/property search
     zh_Hans: 指标 组织 项目 房产 的一个校准或者检索器
-    pt_BR: 指标 组织 项目 房产 的一个校准或者检索器
-  llm: 指标 组织 项目 房产 的一个校准或者检索器
+  llm: target/project/property search
 parameters:
   - name: query
     type: string
@@ -18,12 +16,33 @@ parameters:
     label:
       en_US: Query string
       zh_Hans: 查询语句
-      pt_BR: Query string
     human_description:
-      en_US: 指标 组织 项目 房产 的一个校准或者检索器
+      en_US: target/project/property search
       zh_Hans: 指标 组织 项目 房产 的一个校准或者检索器
-      pt_BR: 指标 组织 项目 房产 的一个校准或者检索器
-    llm_description: 指标 组织 项目 房产 的一个校准或者检索器
+    form: llm
+  - name: fetch_type
+    type: select
+    required: true
+    options:
+      - value: target
+        label:
+          en_US: target
+          zh_Hans: 指标
+      - value: project
+        label:
+          en_US: project
+          zh_Hans: 项目
+      - value: property
+        label:
+          en_US: property
+          zh_Hans: 房产
+    label:
+      en_US: Fetch type
+      zh_Hans: 查询类型
+    human_description:
+      en_US: target/project/property
+      zh_Hans: 指标 组织 项目 房产 的一个校准或者检索器
+    llm_description: target/project/property
     form: llm
 extra:
   python:

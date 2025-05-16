@@ -10,8 +10,23 @@ identity:
     zh_Hans: 指标 组织 项目 房产 的一个校准或者检索器
     pt_BR: 指标 组织 项目 房产 的一个校准或者检索器
   icon: icon.svg
+credentials_for_provider:
+  mysql_url:
+    type: string
+    required: true
+    label:
+      en_US: MySQL URL
+      zh_Hans: MySQL URL
+    placeholder:
+      en_US: mysql://username:password@host:port/database
+      zh_Hans: mysql://username:password@host:port/database
+    help:
+      en_US: MySQL connection string
+      zh_Hans: MySQL 连接字符串
 tools:
   - tools/find-newsee-store.yaml
+tags:
+  - search
 extra:
   python:
     source: provider/find-newsee-store.py
