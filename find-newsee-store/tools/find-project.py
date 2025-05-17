@@ -12,21 +12,21 @@ class FindNewseeStoreTool(Tool):
         try:
             # 获取查询参数
             query = tool_parameters.get('query', '')
-            
+
             if not query:
                 yield self.create_error_message("查询参数为空，请提供有效的查询文本")
                 return
-                
+
             # 获取实体查找器
             entity_finder = self.provider.entity_finder
-            
+
             if not entity_finder:
                 yield self.create_error_message("实体查找器未初始化，请检查插件配置")
                 return
-            
+
             # 执行实体查找
-            result = entity_finder.find_entities(query, top_k=3)
-            
+            result = entity_finder.search(query, entity_type="project", top_k=3)
+
             if result['found']:
                 # 格式化返回结果
                 response = {
@@ -42,9 +42,9 @@ class FindNewseeStoreTool(Tool):
                     "entities": [],
                     "message": "未找到匹配的实体"
                 }
-            
+
             yield self.create_json_message(response)
-            
+
         except Exception as e:
             logger.exception(f"实体查找失败: {str(e)}")
             yield self.create_error_message(f"处理查询时发生错误: {str(e)}")

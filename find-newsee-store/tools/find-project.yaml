@@ -1,0 +1,23 @@
+identity:
+  name: fetch-project
+  author: delldi
+  label:
+    en_US: search project
+    zh_Hans: 项目检索器
+description:
+  human:
+    en_US: project search
+    zh_Hans: 项目检索器
+parameters:
+  - name: query
+    type: string
+    required: true
+    label:
+      en_US: Query string
+      zh_Hans: 查询语句
+    human_description:
+      en_US: project search
+      zh_Hans: 项目检索器
+extra:
+  python:
+    source: tools/find-project.py

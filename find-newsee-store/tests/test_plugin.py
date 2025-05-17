@@ -1,5 +1,4 @@
 import asyncio
-import os
 import sys
 from pathlib import Path
 
@@ -7,16 +6,16 @@ from pathlib import Path
 sys.path.append(str(Path(__file__).parent.absolute()))
 
 from provider.entity_finder_mysql import EntityFinderMySQL
-from provider.database import DatabaseConnection, create_db_url
 
 async def test_plugin():
     """测试Dify插件的功能"""
+
     # 数据库配置 - 请替换为您的实际数据库信息
     db_config = {
-        "host": "192.168.1.52",
+        "host": "localhost",
         "port": 3306,
         "user": "root",
-        "password": "Newsee888",
+        "password": "zd808611",
         "database": "newsee-view",
     }
 
@@ -30,11 +29,15 @@ async def test_plugin():
         print("数据库连接初始化成功")
 
         # 测试搜索功能
-        test_queries = ["金色蓝庭", "龙游", "实收"]
+        test_queries = [
+            ("金色佳园", "project"),
+            ("鹿港大厦服务中心", "org"),
+            ("物业费实收", "target"),
+        ]
 
-        for query in test_queries:
+        for (query, entity_type) in test_queries:
             print(f"\n测试搜索: {query}")
-            results = finder.search(query, top_k=3)
+            results = finder.search(query, entity_type=entity_type, top_k=3)
 
             if results["found"]:
                 print(f"找到 {len(results['results'])} 个结果:")

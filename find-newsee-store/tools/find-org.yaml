@@ -1,0 +1,23 @@
+identity:
+  name: fetch-org
+  author: delldi
+  label:
+    en_US: search org
+    zh_Hans: 组织检索器
+description:
+  human:
+    en_US: org search
+    zh_Hans: 组织的检索器
+parameters:
+  - name: query
+    type: string
+    required: true
+    label:
+      en_US: Query string
+      zh_Hans: 查询语句
+    human_description:
+      en_US: org search
+      zh_Hans: 组织的检索器
+extra:
+  python:
+    source: tools/find-org.py

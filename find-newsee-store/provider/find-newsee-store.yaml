@@ -24,7 +24,9 @@ credentials_for_provider:
       en_US: MySQL connection string
       zh_Hans: MySQL 连接字符串
 tools:
-  - tools/find-newsee-store.yaml
+  - tools/find-project.yaml
+  - tools/find-target.yaml
+  - tools/find-org.yaml
 tags:
   - search
 extra:

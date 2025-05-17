@@ -54,10 +54,10 @@ class EntityFinderMySQL:
                 embedding_function=self.embedding_function,
                 metadata={"description": "项目信息"},
             ),
-            "property": self.client.get_or_create_collection(
-                name="properties",
+            "org": self.client.get_or_create_collection(
+                name="orgs",
                 embedding_function=self.embedding_function,
-                metadata={"description": "房产信息"},
+                metadata={"description": "组织信息"},
             ),
             "target": self.client.get_or_create_collection(
                 name="targets",
@@ -117,10 +117,10 @@ class EntityFinderMySQL:
         if projects:
             self._add_documents_to_collection("project", projects)
 
-        # 加载房产数据
-        properties = await self._load_entities("property")
-        if properties:
-            self._add_documents_to_collection("property", properties)
+        # 加载组织数据
+        orgs = await self._load_entities("org")
+        if orgs:
+            self._add_documents_to_collection("org", orgs)
 
         # 加载指标数据
         targets = await self._load_entities("target")
@@ -140,20 +140,22 @@ class EntityFinderMySQL:
         collection.delete(where={"id": {"$ne": ""}})
 
         # 批量大小
-        batch_size = 1000
+        batch_size = 5000
         total_docs = len(documents)
-        logger.info(f"开始添加{total_docs}条{entity_type}数据到集合，批量大小: {batch_size}")
-        
+        logger.info(
+            f"开始添加{total_docs}条{entity_type}数据到集合，批量大小: {batch_size}"
+        )
+
         # 分批处理
         for start_idx in range(0, total_docs, batch_size):
             end_idx = min(start_idx + batch_size, total_docs)
             batch_docs = documents[start_idx:end_idx]
-            
+
             # 准备批量数据
             texts = []
             metadatas = []
             ids = []
-            
+
             for i, doc in enumerate(batch_docs, start=start_idx):
                 # 确保元数据值都是ChromaDB支持的类型
                 metadata = {}
@@ -165,16 +167,18 @@ class EntityFinderMySQL:
                         metadata[k] = v.isoformat()
                     else:
                         metadata[k] = v
-                
+
                 texts.append(doc["text"])
                 metadatas.append(metadata)
                 ids.append(f"{entity_type}_{i}")
-            
+
             # 添加当前批次数据到集合
             collection.add(documents=texts, metadatas=metadatas, ids=ids)
-            logger.info(f"已添加批次 {start_idx//batch_size + 1}/{(total_docs + batch_size - 1)//batch_size}: "
-                       f"{start_idx+1}-{end_idx} 条{entity_type}数据")
-        
+            logger.info(
+                f"已添加批次 {start_idx//batch_size + 1}/{(total_docs + batch_size - 1)//batch_size}: "
+                f"{start_idx+1}-{end_idx} 条{entity_type}数据"
+            )
+
         logger.info(f"完成添加{total_docs}条{entity_type}数据到集合")
 
     async def _load_entities(self, entity_type: str) -> List[Dict[str, Any]]:
@@ -182,7 +186,7 @@ class EntityFinderMySQL:
         从数据库加载指定类型的实体
 
         Args:
-            entity_type: 实体类型 (project/property/target)
+            entity_type: 实体类型 (project/org/target)
 
         Returns:
             实体文档列表，每个文档包含text和其他元数据
@@ -191,35 +195,35 @@ class EntityFinderMySQL:
             # 根据实体类型构建查询
             if entity_type == "project":
                 query = """
-                    SELECT 
-                        precinct_id as id,
-                        house_name as name,
-                        house_full_name as full_name,
-                        house_type as type
-                    FROM `newsee-owner`.owner_house_base_info
-                    WHERE house_type = 2
-                    AND is_block_up = 0
-                """
-            elif entity_type == "property":
-                query = """
-                    SELECT 
+                    SELECT
                         house_id as id,
-                        house_full_name as name,
-                        precinct_id as project_id,
-                        house_type as type
-                    FROM `newsee-owner`.owner_house_base_info
-                    WHERE house_type = 6
-                    AND is_block_up = 0
+                        pro_short_name as name
+                    FROM `newsee-owner`.owner_house_precinct_info
+                """
+            elif entity_type == "org":
+                query = """
+                    SELECT
+                        organization_id as id,
+                        organization_name as name,
+                        organization_short_name as short_name,
+                        CASE organization_type
+                            WHEN 0 THEN '集团'
+                            WHEN 1 THEN '公司'
+                            WHEN 2 THEN '部门'
+                            ELSE '未知类型'
+                        END AS organization_type_cn
+                    FROM `newsee-system`.ns_system_organization
+                    WHERE is_deleted = 0 and organization_enablestate not in (1, 3)
                 """
             elif entity_type == "target":
                 query = """
-                    SELECT 
+                    SELECT
                         id,
                         targetItemName as name,
                         unit,
                         status
                     FROM `newsee-view`.target_targetitem
-                    WHERE status = 1  
+                    WHERE status = 1
                 """
             else:
                 logger.warning(f"未知的实体类型: {entity_type}")
@@ -269,9 +273,9 @@ class EntityFinderMySQL:
         if entity_type == "project":
             # 项目: 使用项目名称和全名
             return f"{data.get('name', '')} {data.get('full_name', '')}"
-        elif entity_type == "property":
-            # 房产: 使用房产全名和所属项目名称
-            return f"{data.get('name', '')} {data.get('project_name', '')}"
+        elif entity_type == "org":
+            # 组织: 使用组织
+            return f"{data.get('name', '')} {data.get('short_name', '')}"
         elif entity_type == "target":
             # 指标: 使用指标名称和单位
             return f"{data.get('name', '')} {data.get('unit', '')}"
@@ -285,7 +289,7 @@ class EntityFinderMySQL:
 
         Args:
             query: 查询文本
-            entity_type: 实体类型 (project/property/target)，为None时搜索所有类型
+            entity_type: 实体类型 (project/org/target)，为None时搜索所有类型
             top_k: 返回结果数量
 
         Returns:
