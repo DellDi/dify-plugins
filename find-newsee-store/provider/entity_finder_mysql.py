@@ -1,5 +1,5 @@
 import logging
-from typing import Dict, List, Any, Optional, Union, Tuple
+from typing import Dict, List, Any
 from pathlib import Path
 from Levenshtein import distance
 import chromadb
@@ -17,11 +17,12 @@ logger = logging.getLogger(__name__)
 
 # 默认配置
 DEFAULT_CONFIG = {
-    "fuzzy_match_threshold": 0.8,  # 模糊匹配阈值
-    "vector_search_threshold": 0.6,  # 向量搜索阈值
+    "fuzzy_match_threshold": 0.6,  # 模糊匹配阈值 - 降低以捕获更多结果
+    "vector_search_threshold": 0.3,  # 向量搜索阈值 - 降低以捕获更多结果
     "top_k": 3,  # 默认返回结果数量
     "enable_fuzzy": True,  # 是否启用模糊匹配
     "enable_vector_search": True,  # 是否启用向量搜索
+    "default_top_k": 3,  # 默认返回结果数量
 }
 
 
@@ -299,10 +300,12 @@ class EntityFinderMySQL:
             if top_k is None:
                 top_k = self.config["default_top_k"]
 
+            logger.info(f"开始搜索: 查询='{query}', 实体类型={entity_type}, top_k={top_k}")
+
             # 1. 尝试精确匹配
             exact_results = self._exact_match(query)
             if exact_results["found"]:
-                logger.info(f"找到精确匹配: {exact_results}")
+                logger.info(f"找到精确匹配: {len(exact_results['results'])}个结果")
                 return {
                     "success": True,
                     "found": True,
@@ -314,7 +317,7 @@ class EntityFinderMySQL:
             # 2. 尝试模糊匹配
             fuzzy_results = self._fuzzy_match(query, entity_type, top_k)
             if fuzzy_results["found"]:
-                logger.info(f"找到模糊匹配: {fuzzy_results}")
+                logger.info(f"找到模糊匹配: {len(fuzzy_results['results'])}个结果")
                 return {
                     "success": True,
                     "found": True,
@@ -326,7 +329,7 @@ class EntityFinderMySQL:
             # 3. 尝试向量搜索
             vector_results = self._vector_search(query, entity_type, top_k)
             if vector_results["found"]:
-                logger.info(f"向量搜索结果: {vector_results}")
+                logger.info(f"找到向量搜索结果: {len(vector_results['results'])}个结果")
                 return {
                     "success": True,
                     "found": True,
@@ -336,6 +339,7 @@ class EntityFinderMySQL:
                 }
 
             # 未找到结果
+            logger.info(f"未找到匹配结果: 查询='{query}', 实体类型={entity_type}")
             return {
                 "success": True,
                 "found": False,
@@ -356,6 +360,7 @@ class EntityFinderMySQL:
     def _exact_match(self, query: str) -> Dict[str, Any]:
         """精确匹配"""
         results = []
+        query_lower = query.lower().strip()
 
         # 在所有集合中搜索
         for entity_type, collection in self.collections.items():
@@ -366,9 +371,15 @@ class EntityFinderMySQL:
             for i, doc_id in enumerate(items["ids"]):
                 metadata = items["metadatas"][i]
                 name = metadata.get("name", "")
+                if not name:
+                    continue
 
-                # 检查名称是否完全匹配
-                if name and name in query:
+                name_lower = name.lower().strip()
+
+                # 检查名称是否完全匹配 - 两种情况：
+                # 1. 名称包含在查询中
+                # 2. 查询包含在名称中
+                if name_lower in query_lower or query_lower in name_lower:
                     results.append(
                         {
                             "id": metadata.get("id"),
@@ -387,6 +398,7 @@ class EntityFinderMySQL:
     ) -> Dict[str, Any]:
         """模糊匹配"""
         results = []
+        query_lower = query.lower().strip()
 
         # 确定要搜索的集合
         collections_to_search = (
@@ -412,8 +424,21 @@ class EntityFinderMySQL:
 
             # 执行模糊匹配
             for i, name in enumerate(names):
-                similarity = self._calculate_similarity(query, name)
-                if similarity >= self.fuzzy_match_threshold:
+                # 对查询和名称进行预处理
+                name_lower = name.lower().strip()
+
+                # 计算双向相似度（查询->名称和名称->查询）
+                similarity1 = self._calculate_similarity(query_lower, name_lower)
+                similarity2 = self._calculate_similarity(name_lower, query_lower)
+                similarity = max(similarity1, similarity2)
+
+                # 对于短文本，降低阈值
+                threshold = self.fuzzy_match_threshold
+                if len(name) < 5 or len(query) < 5:
+                    threshold = threshold * 0.8
+
+                if similarity >= threshold:
+                    logger.info(f"模糊匹配: {query} -> {name} = {similarity}")
                     results.append(
                         {
                             "id": metadatas[i].get("id"),
@@ -435,6 +460,7 @@ class EntityFinderMySQL:
     ) -> Dict[str, Any]:
         """向量搜索"""
         results = []
+        query = query.strip()
 
         # 确定要搜索的集合
         collections_to_search = (
@@ -448,8 +474,8 @@ class EntityFinderMySQL:
             collection = self.collections[entity_type]
 
             try:
-                # 执行向量搜索
-                search_results = collection.query(query_texts=[query], n_results=top_k)
+                # 执行向量搜索 - 增加结果数量以提高召回率
+                search_results = collection.query(query_texts=[query], n_results=min(top_k * 3, 10))
 
                 # 处理结果
                 if search_results["ids"] and search_results["ids"][0]:
@@ -458,6 +484,9 @@ class EntityFinderMySQL:
                         distance = search_results["distances"][0][i]
                         # 将距离转换为相似度 (0-1之间，1表示最相似)
                         similarity = 1.0 - min(1.0, distance / 2.0)
+
+                        # 记录所有向量搜索结果，便于调试
+                        logger.info(f"向量搜索: {query} -> {metadata.get('name', '')} = {similarity}")
 
                         if similarity >= self.vector_search_threshold:
                             results.append(
@@ -471,7 +500,7 @@ class EntityFinderMySQL:
                                 }
                             )
             except Exception as e:
-                logger.error(f"向量搜索出错 ({entity_type}): {e}")
+                logger.error(f"向量搜索出错 ({entity_type}): {e}", exc_info=True)
 
         # 按相似度排序
         results.sort(key=lambda x: x["similarity"], reverse=True)
@@ -480,10 +509,34 @@ class EntityFinderMySQL:
 
     def _calculate_similarity(self, s1: str, s2: str) -> float:
         """计算两个字符串的相似度（基于编辑距离）"""
-        max_len = max(len(s1), len(s2))
-        if max_len == 0:
+        # 预处理字符串
+        s1 = s1.lower().strip()
+        s2 = s2.lower().strip()
+
+        # 如果有一个是空字符串
+        if not s1 or not s2:
+            return 0.0
+
+        # 如果完全相同
+        if s1 == s2:
             return 1.0
-        return 1 - distance(s1, s2) / max_len
+
+        # 如果一个是另一个的子串，给予较高的相似度
+        if s1 in s2 or s2 in s1:
+            shorter = s1 if len(s1) < len(s2) else s2
+            longer = s2 if len(s1) < len(s2) else s1
+            return 0.8 + 0.2 * (len(shorter) / len(longer))
+
+        # 基于编辑距离计算相似度
+        max_len = max(len(s1), len(s2))
+        edit_dist = distance(s1, s2)
+
+        # 对于短文本，编辑距离的影响更大，因此使用非线性变换
+        if max_len < 5:
+            # 对于非常短的文本，每个字符的差异都很重要
+            return max(0, 1 - (edit_dist / max_len) * 1.5)
+        else:
+            return 1 - edit_dist / max_len
 
     def close(self):
         """释放资源"""
