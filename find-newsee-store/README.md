@@ -1,8 +1,8 @@
 # Newsee 实体查找插件
 
-**Author:** delldi  
-**Version:** 0.3.0  
-**Type:** tool  
+**Author:** delldi
+**Version:** 0.3.0
+**Type:** tool
 **License:** MIT
 
 ## ✨ 功能特点
@@ -101,19 +101,19 @@ async def main():
         "password": "your_password",
         "database": "newsee-view"
     }
-    
+
     # 初始化查找器
     finder = EntityFinderMySQL()
     await finder.initialize(db_config)
-    
+
     # 查找实体
     results = finder.search("星河湾", entity_type="project", top_k=3)
     print(results)
-    
+
     # 查找组织
     results = finder.search("龙游", entity_type="org", top_k=3)
     print(results)
-    
+
     # 查找指标
     results = finder.search("旧欠", entity_type="target", top_k=3)
     print(results)

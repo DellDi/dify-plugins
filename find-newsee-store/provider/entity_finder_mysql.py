@@ -1,12 +1,13 @@
 import logging
 from typing import Dict, List, Any
 from pathlib import Path
-from Levenshtein import distance
 import chromadb
 from chromadb.utils import embedding_functions
 import asyncio
-import math
 import logging
+
+# 导入搜索工具
+from utils.search import ExactMatcher, FuzzyMatcher, VectorSearcher, KeywordExtractor
 import jieba
 import jieba.analyse
 
@@ -31,7 +32,7 @@ DEFAULT_CONFIG = {
 
 
 class EntityFinderMySQL:
-    """实体查找器，用于从MySQL数据库中加载数据并进行实体查找"""
+    """实体查找器，用于从 MySQL 数据库中加载数据并进行实体查找"""
 
     def __init__(self, data_dir: str = "./data"):
         """
@@ -51,6 +52,12 @@ class EntityFinderMySQL:
 
         # 初始化ChromaDB客户端
         self.client = chromadb.PersistentClient(path=str(self.data_dir / "chroma_db"))
+
+        # 初始化搜索器
+        self.exact_matcher = ExactMatcher()
+        self.fuzzy_matcher = FuzzyMatcher(threshold=DEFAULT_CONFIG["fuzzy_match_threshold"])
+        self.vector_searcher = VectorSearcher(threshold=DEFAULT_CONFIG["vector_search_threshold"])
+        self.keyword_extractor = KeywordExtractor()
 
         # 初始化集合
         self.collections = {
@@ -306,8 +313,8 @@ class EntityFinderMySQL:
 
             logger.info(f"开始搜索: 查询='{query}', 实体类型={entity_type}, top_k={top_k}")
 
-            # 1. 尝试精确匹配，传递实体类型进行过滤
-            exact_results = self._exact_match(query, entity_type)
+            # 1. 尝试精确匹配
+            exact_results = self.exact_matcher.search(query, self.collections, entity_type)
             if exact_results["found"]:
                 logger.info(f"找到精确匹配: {len(exact_results['results'])}个结果")
                 return {
@@ -317,9 +324,9 @@ class EntityFinderMySQL:
                     "results": exact_results["results"][:top_k],
                     "message": f"找到{len(exact_results['results'])}个精确匹配结果",
                 }
-
+            logger.info(f"未找到精确匹配结果: 查询='{query}', 实体类型={entity_type}")
             # 2. 尝试模糊匹配
-            fuzzy_results = self._fuzzy_match(query, entity_type, top_k)
+            fuzzy_results = self.fuzzy_matcher.search(query, self.collections, entity_type, top_k)
             if fuzzy_results["found"]:
                 logger.info(f"找到模糊匹配: {len(fuzzy_results['results'])}个结果")
                 return {
@@ -329,9 +336,9 @@ class EntityFinderMySQL:
                     "results": fuzzy_results["results"][:top_k],
                     "message": f"找到{len(fuzzy_results['results'])}个模糊匹配结果",
                 }
-
+            logger.info(f"未找到模糊匹配结果: 查询='{query}', 实体类型={entity_type}")
             # 3. 尝试向量搜索
-            vector_results = self._vector_search(query, entity_type, top_k)
+            vector_results = self.vector_searcher.search(query, self.collections, entity_type, top_k)
             if vector_results["found"]:
                 logger.info(f"找到向量搜索结果: {len(vector_results['results'])}个结果")
                 return {
@@ -341,7 +348,6 @@ class EntityFinderMySQL:
                     "results": vector_results["results"][:top_k],
                     "message": f"找到{len(vector_results['results'])}个相关结果",
                 }
-
             # 未找到结果
             logger.info(f"未找到匹配结果: 查询='{query}', 实体类型={entity_type}")
             return {
@@ -360,298 +366,6 @@ class EntityFinderMySQL:
                 "results": [],
                 "message": error_msg,
             }
-
-    def _exact_match(self, query: str, entity_type: str = None) -> Dict[str, Any]:
-        """精确匹配
-        
-        Args:
-            query: 查询文本
-            entity_type: 实体类型，如果指定则只搜索该类型
-            
-        Returns:
-            包含搜索结果的字典
-        """
-        results = []
-        query_lower = query.lower().strip()
-        
-        # 确定要搜索的集合
-        collections_to_search = {}
-        if entity_type and entity_type in self.collections:
-            # 如果指定了实体类型，只搜索该类型
-            collections_to_search[entity_type] = self.collections[entity_type]
-        else:
-            # 否则搜索所有类型
-            collections_to_search = self.collections
-
-        # 在选定的集合中搜索
-        for entity_type, collection in collections_to_search.items():
-            # 获取所有文档
-            items = collection.get()
-
-            # 检查每个文档
-            for i, doc_id in enumerate(items["ids"]):
-                metadata = items["metadatas"][i]
-                name = metadata.get("name", "")
-                if not name:
-                    continue
-
-                name_lower = name.lower().strip()
-
-                # 精确匹配应该是完全相等的关系
-                # 对于精确匹配，我们有两种策略：
-                # 1. 严格精确匹配：name_lower == query_lower
-                # 2. 包含匹配：将包含关系移至模糊匹配中处理
-                if name_lower == query_lower:
-                    results.append(
-                        {
-                            "id": metadata.get("id"),
-                            "name": name,
-                            "type": entity_type,
-                            "similarity": 1.0,
-                            "match_type": "exact",
-                            "metadata": metadata,
-                        }
-                    )
-
-        return {"found": len(results) > 0, "results": results}
-
-    def _fuzzy_match(
-        self, query: str, entity_type: str = None, top_k: int = 5
-    ) -> Dict[str, Any]:
-        """模糊匹配"""
-        results = []
-        query_lower = query.lower().strip()
-
-        # 确定要搜索的集合
-        collections_to_search = (
-            [entity_type] if entity_type else self.collections.keys()
-        )
-
-        for entity_type in collections_to_search:
-            if entity_type not in self.collections:
-                continue
-
-            collection = self.collections[entity_type]
-            items = collection.get()
-
-            # 获取所有文档名称
-            names = []
-            metadatas = []
-            for i, doc_id in enumerate(items["ids"]):
-                metadata = items["metadatas"][i]
-                name = metadata.get("name", "")
-                if name:
-                    names.append(name)
-                    metadatas.append(metadata)
-
-            # 执行模糊匹配
-            for i, name in enumerate(names):
-                # 对查询和名称进行预处理
-                name_lower = name.lower().strip()
-
-                # 检查包含关系（之前在精确匹配中处理的）
-                if name_lower in query_lower or query_lower in name_lower:
-                    # 如果是包含关系，给予较高的相似度
-                    shorter = name_lower if len(name_lower) < len(query_lower) else query_lower
-                    longer = query_lower if len(name_lower) < len(query_lower) else name_lower
-                    similarity = 0.85 + 0.15 * (len(shorter) / len(longer))
-                else:
-                    # 计算双向相似度（查询->名称和名称->查询）
-                    similarity1 = self._calculate_similarity(query_lower, name_lower)
-                    similarity2 = self._calculate_similarity(name_lower, query_lower)
-                    similarity = max(similarity1, similarity2)
-
-                # 对于短文本，降低阈值
-                threshold = self.fuzzy_match_threshold
-                if len(name) < 5 or len(query) < 5:
-                    threshold = threshold * 0.8
-
-                if similarity >= threshold:
-                    logger.info(f"模糊匹配: {query} -> {name} = {similarity}")
-                    results.append(
-                        {
-                            "id": metadatas[i].get("id"),
-                            "name": name,
-                            "type": entity_type,
-                            "similarity": round(similarity, 2),
-                            "match_type": "fuzzy",
-                            "metadata": metadatas[i],
-                        }
-                    )
-
-        # 按相似度排序
-        results.sort(key=lambda x: x["similarity"], reverse=True)
-
-        return {"found": len(results) > 0, "results": results[:top_k]}
-
-    def _extract_keywords(self, text: str) -> str:
-        """使用jieba分词库从长文本中提取关键词和实体名称"""
-        # 常见的中文停用词
-        stop_words = [
-            '我', '想', '查询', '一下', '帮我', '找', '一下', '关于', 
-            '的', '了', '请', '需要', '如何', '怎么样', '是', '吗', '吗？', 
-            '呢', '呢？', '吗', '吗？', '吗', '吗？', '吗', '吗？',
-            '个', '和', '有', '不', '在', '也', '为', '么', '到', '得', '这', '那',
-            '都', '而', '之', '已', '与', '还', '就', '可', '但', '却', '使', '由',
-            '于', '所', '以', '都', '就', '很', '很多', '这个', '那个'
-        ]
-        
-        # 1. 使用jieba分词
-        seg_list = jieba.cut(text)
-        words = [w for w in seg_list if w not in stop_words and len(w) > 1]
-        
-        # 2. 使用jieba的TF-IDF算法提取关键词
-        # 对于短文本，返回最多5个关键词
-        keywords = jieba.analyse.extract_tags(text, topK=5, withWeight=False)
-        
-        # 3. 使用jieba的TextRank算法提取关键词
-        # TextRank算法更适合提取长文本中的关键词
-        textrank_keywords = jieba.analyse.textrank(text, topK=3, withWeight=False)
-        
-        # 4. 提取可能的实体名称
-        # 尝试提取连续的名词短语（使用jieba的词性标注功能）
-        import jieba.posseg as pseg
-        words_with_pos = pseg.cut(text)
-        entity_candidates = []
-        
-        # 提取名词、地名和机构名称
-        for word, flag in words_with_pos:
-            # n表示名词，ns表示地名，nt表示机构名称
-            if flag.startswith('n') and len(word) >= 2 and word not in stop_words:
-                entity_candidates.append(word)
-        
-        # 5. 组合所有提取的关键词和实体
-        all_keywords = list(set(words + keywords + textrank_keywords + entity_candidates))
-        
-        # 如果提取到的关键词过多，只保留前10个
-        if len(all_keywords) > 10:
-            all_keywords = all_keywords[:10]
-        
-        # 将关键词组合成一个字符串
-        combined_text = ' '.join(all_keywords)
-        
-        # 记录提取的关键词，便于调试
-        logger.debug(f"关键词提取: 原文='{text}', 关键词='{combined_text}'")
-        
-        return combined_text if combined_text else text  # 如果提取失败，返回原文本
-
-    def _vector_search(
-        self, query: str, entity_type: str = None, top_k: int = 5
-    ) -> Dict[str, Any]:
-        """向量搜索"""
-        results = []
-        query = query.strip()
-        
-        # 对长句进行关键词提取
-        original_query = query
-        if len(query) > 15:  # 对长句进行关键词提取
-            query_for_search = self._extract_keywords(query)
-            logger.info(f"长句关键词提取: '{original_query}' -> '{query_for_search}'")
-        else:
-            query_for_search = query
-
-        # 确定要搜索的集合
-        collections_to_search = (
-            [entity_type] if entity_type else self.collections.keys()
-        )
-
-        for entity_type in collections_to_search:
-            if entity_type not in self.collections:
-                continue
-
-            collection = self.collections[entity_type]
-
-            try:
-                # 执行向量搜索 - 增加结果数量以提高召回率
-                search_results = collection.query(
-                    query_texts=[query_for_search], 
-                    n_results=min(top_k * 3, 10)
-                )
-
-                # 处理结果
-                if search_results["ids"] and search_results["ids"][0]:
-                    for i, doc_id in enumerate(search_results["ids"][0]):
-                        metadata = search_results["metadatas"][0][i]
-                        name = metadata.get('name', '')
-                        
-                        # 获取原始距离
-                        distance = float(search_results["distances"][0][i])
-                        
-                        # 计算相似度，确保在 0-1 范围内
-                        # ChromaDB 返回的是欧几里得距离，需要转换为相似度
-                        # 使用指数衰减函数进行转换，以获得更好的相似度分布
-                        similarity = max(0.0, min(1.0, math.exp(-distance)))
-                        
-                        # 对于长句查询，进行额外的相似度调整
-                        if len(original_query) > 15:
-                            # 检查实体名称是否出现在原始查询中
-                            if name in original_query:
-                                similarity = max(similarity, 0.75)  # 如果实体名称在原始查询中，给予更高的相似度
-                            
-                            # 检查实体名称的部分是否出现在原始查询中
-                            if len(name) >= 2:
-                                for j in range(len(name) - 1):
-                                    part = name[j:j+2]
-                                    if part in original_query and len(part) >= 2:
-                                        similarity = max(similarity, 0.6)  # 如果实体名称的部分在原始查询中，给予较高的相似度
-                        
-                        # 记录所有向量搜索结果，便于调试
-                        logger.info(f"向量搜索: {original_query} -> {name} = {similarity:.2f} (距离: {distance:.2f})")
-                        
-                        # 对长句查询降低阈值要求
-                        threshold = self.vector_search_threshold
-                        if len(original_query) > 15:  # 长句查询
-                            threshold = max(0.2, threshold * 0.5)  # 显著降低阈值
-                            
-                        if similarity >= threshold:
-                            results.append(
-                                {
-                                    "id": metadata.get("id"),
-                                    "name": name,
-                                    "type": entity_type,
-                                    "similarity": round(similarity, 2),
-                                    "match_type": "vector",
-                                    "metadata": metadata,
-                                }
-                            )
-            except Exception as e:
-                logger.error(f"向量搜索出错 ({entity_type}): {e}", exc_info=True)
-
-        # 按相似度排序
-        results.sort(key=lambda x: x["similarity"], reverse=True)
-
-        return {"found": len(results) > 0, "results": results[:top_k]}
-
-    def _calculate_similarity(self, s1: str, s2: str) -> float:
-        """计算两个字符串的相似度（基于编辑距离）"""
-        # 预处理字符串
-        s1 = s1.lower().strip()
-        s2 = s2.lower().strip()
-
-        # 如果有一个是空字符串
-        if not s1 or not s2:
-            return 0.0
-
-        # 如果完全相同
-        if s1 == s2:
-            return 1.0
-
-        # 如果一个是另一个的子串，给予较高的相似度
-        if s1 in s2 or s2 in s1:
-            shorter = s1 if len(s1) < len(s2) else s2
-            longer = s2 if len(s1) < len(s2) else s1
-            return 0.8 + 0.2 * (len(shorter) / len(longer))
-
-        # 基于编辑距离计算相似度
-        max_len = max(len(s1), len(s2))
-        edit_dist = distance(s1, s2)
-
-        # 对于短文本，编辑距离的影响更大，因此使用非线性变换
-        if max_len < 5:
-            # 对于非常短的文本，每个字符的差异都很重要
-            return max(0, 1 - (edit_dist / max_len) * 1.5)
-        else:
-            return 1 - edit_dist / max_len
 
     def close(self):
         """释放资源"""
