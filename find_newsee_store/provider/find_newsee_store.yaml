@@ -27,7 +27,7 @@ credentials_for_provider:
 tools:
   - tools/find_project.yaml
   - tools/find_target.yaml
-  # - tools/find_org.yaml
+  - tools/find_org.yaml
 tags:
   - search
 extra:

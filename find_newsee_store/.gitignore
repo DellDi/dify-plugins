@@ -10,6 +10,8 @@ __pycache__/
 test_data/
 data/
 
+dify
+
 # Distribution / packaging
 .Python
 build/
