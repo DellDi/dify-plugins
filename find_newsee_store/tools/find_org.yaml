@@ -1,5 +1,5 @@
 identity:
-  name: fetch-org
+  name: fetch_org
   author: delldi
   label:
     en_US: search org
@@ -7,7 +7,8 @@ identity:
 description:
   human:
     en_US: org search
-    zh_Hans: 组织的检索器
+    zh_Hans: 组织检索器
+  llm: Search for organizations by name or keywords, returns top 3 matching organizations
 parameters:
   - name: query
     type: string
@@ -18,6 +19,9 @@ parameters:
     human_description:
       en_US: org search
       zh_Hans: 组织的检索器
+    llm_description: the query string of org name, return top 3 results
+    form: llm
+
 extra:
   python:
-    source: tools/find-org.py
+    source: tools/find_org.py

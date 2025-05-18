@@ -61,7 +61,7 @@ graph TD
   - `DatabaseConnection` 类：处理数据库连接和查询
   - 基于 SQLAlchemy 和 PyMySQL 实现
 - **`main.py`**: 插件入口点
-- **`provider/find-newsee-store.py`**: Dify 插件提供者实现
+- **`provider/find_newsee_store.py`**: Dify 插件提供者实现
 - **`tools/`**: 工具实现目录
   - `find-project.py`: 项目查找工具
   - `find-org.py`: 组织查找工具

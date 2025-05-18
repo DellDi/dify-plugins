@@ -4,7 +4,7 @@
 
 ## 插件列表
 
-### 1. 实体查找器 (find-newsee-store)
+### 1. 实体查找器 (find_newsee_store)
 
 **功能**: 从用户输入的文本中识别并提取项目和房产实体，并返回对应的 ID 和相关信息。
 
@@ -22,9 +22,9 @@
 
 **使用方法**:
 ```bash
-cd find-newsee-store
+cd find_newsee_store
 pip install -r requirements.txt
 python -m main
 ```
 
-详细文档请参考 [find-newsee-store/README.md](./find-newsee-store/README.md)
+详细文档请参考 [find_newsee_store/README.md](./find_newsee_store/README.md)

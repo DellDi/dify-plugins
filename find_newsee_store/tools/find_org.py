@@ -5,6 +5,10 @@ import logging
 from dify_plugin import Tool
 from dify_plugin.entities.tool import ToolInvokeMessage
 
+# 导入实体查找器模块
+import utils.provider
+
+
 logger = logging.getLogger(__name__)
 
 class FindNewseeStoreTool(Tool):
@@ -14,16 +18,14 @@ class FindNewseeStoreTool(Tool):
             query = tool_parameters.get('query', '')
 
             if not query:
-                yield self.create_error_message("查询参数为空，请提供有效的查询文本")
+                yield self.create_text_message("查询参数为空，请提供有效的查询文本")
                 return
 
             # 获取实体查找器
-            entity_finder = self.provider.entity_finder
-
+            entity_finder = utils.provider.provider_entity_finder
             if not entity_finder:
-                yield self.create_error_message("实体查找器未初始化，请检查插件配置")
+                yield self.create_text_message("实体查找器未初始化，请检查插件配置")
                 return
-
             # 执行实体查找
             result = entity_finder.search(query, entity_type="org", top_k=3)
 
@@ -47,5 +49,4 @@ class FindNewseeStoreTool(Tool):
 
         except Exception as e:
             logger.exception(f"实体查找失败: {str(e)}")
-            yield self.create_error_message(f"处理查询时发生错误: {str(e)}")
-
+            yield self.create_text_message(f"处理查询时发生错误: {str(e)}")

@@ -9,6 +9,7 @@ from dify_plugin.errors.tool import ToolProviderCredentialValidationError
 # 导入新的EntityFinderMySQL
 from provider.entity_finder_mysql import EntityFinderMySQL
 
+
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message:s)')
 logger = logging.getLogger(__name__)
 
@@ -45,8 +46,12 @@ class FindNewseeStoreProvider(ToolProvider):
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
             loop.run_until_complete(self._initialize_finder(db_config))
-            loop.close()
-
+            # loop.close()
+            
+            # 设置全局实体查找器实例
+            # 先确保模块被导入
+            import utils.provider
+            utils.provider.provider_entity_finder = self.entity_finder
             logger.info("实体查找器初始化成功")
 
         except Exception as e:
@@ -127,6 +132,6 @@ class FindNewseeStoreProvider(ToolProvider):
 
     def __del__(self):
         """清理资源"""
-        if self.entity_finder is not None:
-            self.entity_finder.close()
-            logger.info("实体查找器资源已释放")
+        # if self.entity_finder is not None:
+        #     self.entity_finder.close()
+        #     logger.info("实体查找器资源已释放")
