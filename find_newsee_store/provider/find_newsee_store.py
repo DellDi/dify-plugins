@@ -2,7 +2,6 @@ from typing import Any, Dict, Optional
 import os
 import logging
 import asyncio
-import shutil
 
 from dify_plugin import ToolProvider
 from dify_plugin.errors.tool import ToolProviderCredentialValidationError
@@ -38,9 +37,6 @@ class FindNewseeStoreProvider(ToolProvider):
             )
 
         try:
-            # 先删除数据目录
-            if os.path.exists(self.data_dir):
-                shutil.rmtree(self.data_dir)
 
             # 创建数据目录
             os.makedirs(self.data_dir, exist_ok=True)

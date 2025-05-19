@@ -51,7 +51,14 @@ class EntityFinderMySQL:
         )
 
         # 初始化ChromaDB客户端
-        self.client = chromadb.PersistentClient(path=str(self.data_dir / "chroma_db"))
+        # 使用内存模式初始化ChromaDB，避免持久化存储问题
+        try:
+            # 使用内存模式
+            self.client = chromadb.Client()
+            logger.info("使用内存模式初始化ChromaDB客户端")
+        except Exception as e:
+            logger.error(f"ChromaDB初始化失败: {e}")
+            raise
 
         # 初始化搜索器
         self.exact_matcher = ExactMatcher()
@@ -144,54 +151,80 @@ class EntityFinderMySQL:
     def _add_documents_to_collection(self, entity_type: str, documents: List[Dict]):
         """将文档添加到对应的集合中"""
         if not documents:
+            logger.info(f"没有{entity_type}数据需要添加")
             return
+
+        if entity_type not in self.collections:
+            logger.warning(f"集合{entity_type}不存在，尝试创建...")
+            try:
+                self.collections[entity_type] = self.client.create_collection(
+                    name=f"{entity_type}s",
+                    embedding_function=self.embedding_function,
+                    metadata={"description": f"{entity_type}信息"}
+                )
+            except Exception as e:
+                logger.error(f"创建{entity_type}集合失败: {e}")
+                return
 
         collection = self.collections[entity_type]
 
-        # 清空现有数据
-        collection.delete(where={"id": {"$ne": ""}})
+        try:
+            # 清空现有数据
+            try:
+                collection.delete(where={"id": {"$ne": ""}})
+                logger.info(f"已清空{entity_type}集合中的现有数据")
+            except Exception as e:
+                logger.warning(f"清空{entity_type}集合数据失败，将继续添加新数据: {e}")
 
-        # 批量大小
-        batch_size = 5000
-        total_docs = len(documents)
-        logger.info(
-            f"开始添加{total_docs}条{entity_type}数据到集合，批量大小: {batch_size}"
-        )
-
-        # 分批处理
-        for start_idx in range(0, total_docs, batch_size):
-            end_idx = min(start_idx + batch_size, total_docs)
-            batch_docs = documents[start_idx:end_idx]
-
-            # 准备批量数据
-            texts = []
-            metadatas = []
-            ids = []
-
-            for i, doc in enumerate(batch_docs, start=start_idx):
-                # 确保元数据值都是ChromaDB支持的类型
-                metadata = {}
-                for k, v in doc.items():
-                    if k == "text":
-                        continue
-                    # 转换datetime为ISO格式字符串
-                    if hasattr(v, "isoformat"):
-                        metadata[k] = v.isoformat()
-                    else:
-                        metadata[k] = v
-
-                texts.append(doc["text"])
-                metadatas.append(metadata)
-                ids.append(f"{entity_type}_{i}")
-
-            # 添加当前批次数据到集合
-            collection.add(documents=texts, metadatas=metadatas, ids=ids)
+            # 批量大小
+            batch_size = 5000
+            total_docs = len(documents)
             logger.info(
-                f"已添加批次 {start_idx//batch_size + 1}/{(total_docs + batch_size - 1)//batch_size}: "
-                f"{start_idx+1}-{end_idx} 条{entity_type}数据"
+                f"开始添加{total_docs}条{entity_type}数据到集合，批量大小: {batch_size}"
             )
 
-        logger.info(f"完成添加{total_docs}条{entity_type}数据到集合")
+            # 分批处理
+            success_count = 0
+            for start_idx in range(0, total_docs, batch_size):
+                try:
+                    end_idx = min(start_idx + batch_size, total_docs)
+                    batch_docs = documents[start_idx:end_idx]
+
+                    # 准备批量数据
+                    texts = []
+                    metadatas = []
+                    ids = []
+
+                    for i, doc in enumerate(batch_docs, start=start_idx):
+                        # 确保元数据值都是ChromaDB支持的类型
+                        metadata = {}
+                        for k, v in doc.items():
+                            if k == "text":
+                                continue
+                            # 转换datetime为ISO格式字符串
+                            if hasattr(v, "isoformat"):
+                                metadata[k] = v.isoformat()
+                            else:
+                                metadata[k] = v
+
+                        texts.append(doc["text"])
+                        metadatas.append(metadata)
+                        ids.append(f"{entity_type}_{i}")
+
+                    # 添加当前批次数据到集合
+                    collection.add(documents=texts, metadatas=metadatas, ids=ids)
+                    success_count += len(batch_docs)
+                    logger.info(
+                        f"已添加批次 {start_idx//batch_size + 1}/{(total_docs + batch_size - 1)//batch_size}: "
+                        f"{start_idx+1}-{end_idx} 条{entity_type}数据"
+                    )
+                except Exception as e:
+                    logger.error(f"添加{entity_type}数据批次{start_idx//batch_size + 1}失败: {e}")
+
+            logger.info(f"完成添加{success_count}/{total_docs}条{entity_type}数据到集合")
+        except Exception as e:
+            logger.error(f"添加{entity_type}数据到集合时发生错误: {e}")
+            # 不抛出异常，确保我们仍然可以继续处理其他实体类型
 
     async def _load_entities(self, entity_type: str) -> List[Dict[str, Any]]:
         """
@@ -378,45 +411,3 @@ class EntityFinderMySQL:
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         self.close()
-
-
-# 使用示例
-async def example_usage():
-    # 配置数据库连接
-    db_config = {
-        "host": "localhost",
-        "port": 3306,
-        "user": "your_username",
-        "password": "your_password",
-        "database": "your_database",
-    }
-
-    # 创建实体查找器实例
-    finder = EntityFinderMySQL(data_dir="./data")
-
-    try:
-        # 初始化并加载数据
-        await finder.initialize(db_config)
-
-        # 执行搜索
-        query = "搜索关键词"
-        results = finder.search(query, top_k=3)
-
-        # 输出结果
-        if results["found"]:
-            print(f"找到 {len(results['results'])} 个结果:")
-            for i, result in enumerate(results["results"], 1):
-                print(
-                    f"{i}. {result['name']} ({result['type']}) - 相似度: {result['similarity']}"
-                )
-        else:
-            print("未找到匹配结果")
-
-    except Exception as e:
-        print(f"发生错误: {e}")
-    finally:
-        finder.close()
-
-
-if __name__ == "__main__":
-    asyncio.run(example_usage())
