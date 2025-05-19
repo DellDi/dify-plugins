@@ -2,6 +2,7 @@ from typing import Any, Dict, Optional
 import os
 import logging
 import asyncio
+import shutil
 
 from dify_plugin import ToolProvider
 from dify_plugin.errors.tool import ToolProviderCredentialValidationError
@@ -32,6 +33,10 @@ class FindNewseeStoreProvider(ToolProvider):
             raise ToolProviderCredentialValidationError("缺少MySQL连接字符串(mysql_url)")
 
         try:
+            # 先删除数据目录
+            if os.path.exists(self.data_dir):
+                shutil.rmtree(self.data_dir)
+            
             # 创建数据目录
             os.makedirs(self.data_dir, exist_ok=True)
 
@@ -46,7 +51,7 @@ class FindNewseeStoreProvider(ToolProvider):
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
             loop.run_until_complete(self._initialize_finder(db_config))
-            # loop.close()
+            loop.close()
             
             # 设置全局实体查找器实例
             # 先确保模块被导入

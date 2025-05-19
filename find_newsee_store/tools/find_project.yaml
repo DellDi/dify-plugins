@@ -7,7 +7,7 @@ identity:
 description:
   human:
     en_US: project search
-    zh_Hans: 项目检索器
+    zh_Hans: 查询项目：支持长句、短句、模糊匹配、向量匹配、错别字纠正
   llm: Search for projects by name or keywords, returns top 3 matching projects
 parameters:
   - name: query
@@ -15,10 +15,10 @@ parameters:
     required: true
     label:
       en_US: Query string
-      zh_Hans: 查询语句
+      zh_Hans: 查询项目、支持长句、短句
     human_description:
       en_US: project search
-      zh_Hans: 项目检索器
+      zh_Hans: 查询项目、支持长句、短句、模糊匹配、向量匹配、错别字纠正
     llm_description: the query string of project name, return top 3 results
     form: llm
 extra:

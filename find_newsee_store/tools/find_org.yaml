@@ -7,7 +7,7 @@ identity:
 description:
   human:
     en_US: org search
-    zh_Hans: 组织检索器
+    zh_Hans: 查询组织：支持长句、短句、模糊匹配、向量匹配、错别字纠正
   llm: Search for organizations by name or keywords, returns top 3 matching organizations
 parameters:
   - name: query
@@ -15,10 +15,10 @@ parameters:
     required: true
     label:
       en_US: Query string
-      zh_Hans: 查询语句
+      zh_Hans: 查询组织、支持长句、短句
     human_description:
       en_US: org search
-      zh_Hans: 组织的检索器
+      zh_Hans: 查询组织：支持长句、短句
     llm_description: the query string of org name, return top 3 results
     form: llm
 

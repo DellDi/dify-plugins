@@ -3,16 +3,15 @@ type: plugin
 author: delldi
 name: find_newsee_store
 label:
-  en_US: find_newsee_store
-  ja_JP: find_newsee_store
-  zh_Hans: find_newsee_store
-  pt_BR: find_newsee_store
+  zh-Hans: Standard Business Finder
+  en_US: 业务检索矫正器
 description:
-  en_US: Find project, organization, target, and real estate
-  ja_JP: プロジェクト、組織、目標、不動産の検索器
-  zh_Hans: 项目、组织、指标的检索器
-  pt_BR: Find project, organization, target, and real estate
-icon: icon.svg
+  en_US: 基于新视窗数据的方案的项目、组织、指标的检索器
+    - 支持精确匹配、模糊匹配和向量检索
+    - 支持直接响应文本类型数据和json格式的数据
+    - 提供对应的标准的业务名称和业务字段的ID
+    - 响应时间快，与常规的检索器和RAG方案相比，响应检索时间降低到500ms以内
+icon: delldi_agi_compressed.png
 resource:
   memory: 268435456
   permission:
@@ -33,9 +32,11 @@ meta:
     - arm64
   runner:
     language: python
-    version: "3.12"
+    version: '3.12'
     entrypoint: main
   minimum_dify_version: null
 created_at: 2025-05-13T10:03:40.493219+08:00
 privacy: PRIVACY.md
 verified: false
+tags:
+  - search
