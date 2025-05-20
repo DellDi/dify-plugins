@@ -47,9 +47,11 @@ class FindNewseeStoreTool(Tool):
                     "entities": [],
                     "message": "未找到匹配的实体"
                 }
+
+            logger.info("result: ->>>>> ", result)
             # 取第一个中的name
-            if (result['found']):
-                name = response['results'][0]['name']
+            if result["found"]:
+                name = result["results"][0]["name"]
                 yield self.create_text_message(name)
             yield self.create_json_message(response)
 

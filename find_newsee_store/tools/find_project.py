@@ -47,8 +47,9 @@ class FindNewseeStoreTool(Tool):
                 }
 
             # 取第一个中的name
+            logger.info(result)
             if result["found"]:
-                name = response["results"][0]["name"]
+                name = result["results"][0]["name"]
                 yield self.create_text_message(name)
             yield self.create_json_message(response)
 

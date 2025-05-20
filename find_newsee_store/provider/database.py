@@ -1,7 +1,6 @@
 from typing import Dict, List, Any, Optional
 import pymysql
 from sqlalchemy import create_engine, text
-from sqlalchemy.engine import URL
 from sqlalchemy.exc import SQLAlchemyError
 import logging
 

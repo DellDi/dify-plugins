@@ -36,10 +36,15 @@ class FindNewseeStoreProvider(ToolProvider):
                 "缺少MySQL连接字符串(mysql_url)"
             )
 
-        try:
+        has_chroma_db = os.path.exists(os.path.join(self.data_dir, "chroma_db", "chroma.sqlite3"))
 
-            # 创建数据目录
-            os.makedirs(self.data_dir, exist_ok=True)
+        try:
+            # 如果目录和chroma_db/chroma.sqlite3文件存在则跳过
+            if os.path.exists(self.data_dir) and has_chroma_db:
+                logger.info("数据目录和chroma.sqlite3文件已存在，跳过创建")
+            else:
+                # 创建数据目录
+                os.makedirs(self.data_dir, exist_ok=True)
 
             # 初始化实体查找器
             self.entity_finder = EntityFinderMySQL(data_dir=self.data_dir)
@@ -48,11 +53,12 @@ class FindNewseeStoreProvider(ToolProvider):
             mysql_url = credentials["mysql_url"]
             db_config = self._parse_mysql_url(mysql_url)
 
-            # 异步初始化数据库连接
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            loop.run_until_complete(self._initialize_finder(db_config))
-            loop.close()
+            if not has_chroma_db:
+                # 异步初始化数据库连接
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                loop.run_until_complete(self._initialize_finder(db_config))
+                loop.close()
 
             # 设置全局实体查找器实例
             # 先确保模块被导入

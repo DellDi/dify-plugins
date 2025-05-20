@@ -1,4 +1,4 @@
-version: 0.0.1
+version: 0.0.2
 type: plugin
 author: delldi
 name: find_newsee_store
@@ -11,22 +11,19 @@ description:
     - 支持直接响应文本类型数据和json格式的数据
     - 提供对应的标准的业务名称和业务字段的ID
     - 响应时间快，与常规的检索器和RAG方案相比，响应检索时间降低到500ms以内
-icon: delldi_agi_compressed.png
+icon: delldi_agi_compressed.svg
 resource:
-  memory: 868435456
+  memory: 268435456  # 256MB
   permission:
     tool:
       enabled: true
     endpoint:
       enabled: true
-    storage:
-      enabled: true
-      size: 1048576
 plugins:
   tools:
     - provider/find_newsee_store.yaml
 meta:
-  version: 0.0.1
+  version: 0.0.2
   arch:
     - amd64
     - arm64

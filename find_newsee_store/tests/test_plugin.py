@@ -7,28 +7,30 @@ import colorlog
 
 # 设置彩色日志
 
+
 def setup_logger():
     """初始化彩色日志配置"""
     handler = colorlog.StreamHandler()
     handler.setFormatter(
         colorlog.ColoredFormatter(
-            fmt='%(log_color)s%(asctime)s [%(levelname)s] %(message)s',
-            datefmt='%Y-%m-%d %H:%M:%S',
+            fmt="%(log_color)s%(asctime)s [%(levelname)s] %(message)s",
+            datefmt="%Y-%m-%d %H:%M:%S",
             log_colors={
-                'DEBUG': 'cyan',
-                'INFO': 'green',
-                'WARNING': 'yellow',
-                'ERROR': 'red',
-                'CRITICAL': 'bold_red',
-            }
+                "DEBUG": "cyan",
+                "INFO": "green",
+                "WARNING": "yellow",
+                "ERROR": "red",
+                "CRITICAL": "bold_red",
+            },
         )
     )
 
-    logger = logging.getLogger('test_plugin')
+    logger = logging.getLogger("test_plugin")
     logger.setLevel(logging.INFO)
     logger.addHandler(handler)
     logger.propagate = False
     return logger
+
 
 logger = setup_logger()
 
@@ -37,15 +39,16 @@ sys.path.append(str(Path(__file__).parent.absolute()))
 
 from provider.entity_finder_mysql import EntityFinderMySQL
 
+
 async def test_plugin():
     """测试Dify插件的功能"""
 
     # 数据库配置 - 请替换为您的实际数据库信息
     db_config = {
-        "host": "192.168.1.52",
-        "port": 3306,
-        "user": "root",
-        "password": "Newsee888",
+        "host": "jms.new-see.com",
+        "port": 33061,
+        "user": "1409c64f-e968-4aec-b12a-e8c194ddc3d4",
+        "password": "dqriPJ7GnytEFHId",
         "database": "newsee-view",
     }
 
@@ -54,7 +57,7 @@ async def test_plugin():
 
     try:
         # 修改后
-        if not hasattr(finder, 'db') or not finder.db or not finder.db.is_connected():
+        if not hasattr(finder, "db") or not finder.db or not finder.db.is_connected():
             await finder.initialize(db_config)
 
         # 测试搜索功能
@@ -120,21 +123,21 @@ async def test_plugin():
             "错别字测试": "📖",  # 书本
             "短句测试": "🔍",  # 放大镜
             "长句测试": "💬",  # 对话框
-            "边界测试": "🔮"   # 水晶球
+            "边界测试": "🔮",  # 水晶球
         }
 
         # 定义实体类型图标
         entity_icons = {
             "project": "🏘️",  # 建筑
-            "org": "🏛️",     # 组织
-            "target": "💰"      # 指标
+            "org": "🏛️",  # 组织
+            "target": "💰",  # 指标
         }
 
         # 定义匹配类型颜色和图标
         match_type_format = {
             "exact": ("[1;32m精确匹配[0m", "✅"),  # 绿色勾
             "fuzzy": ("[1;33m模糊匹配[0m", "⚠️"),  # 黄色感叹号
-            "vector": ("[1;36m向量匹配[0m", "🧠")   # 蓝色大脑
+            "vector": ("[1;36m向量匹配[0m", "🧠"),  # 蓝色大脑
         }
 
         # 按类别测试并输出结果
@@ -145,16 +148,22 @@ async def test_plugin():
             total_count = len(queries)
             start_time = time.time()
 
-            for (query, entity_type) in queries:
+            for query, entity_type in queries:
                 e_icon = entity_icons.get(entity_type, "")
-                logger.info(f"\n{e_icon} 测试搜索: [1;34m{query}[0m (类型: [1;35m{entity_type}[0m)")
+                logger.info(
+                    f"\n{e_icon} 测试搜索: [1;34m{query}[0m (类型: [1;35m{entity_type}[0m)"
+                )
                 results = finder.search(query, entity_type=entity_type, top_k=3)
 
                 if results["found"]:
                     success_count += 1
                     match_type = results["results"][0]["match_type"]
-                    color_type, type_icon = match_type_format.get(match_type, ("未知匹配", "?"))
-                    logger.info(f"{type_icon} 找到 {len(results['results'])} 个结果 ({color_type}):")
+                    color_type, type_icon = match_type_format.get(
+                        match_type, ("未知匹配", "?")
+                    )
+                    logger.info(
+                        f"{type_icon} 找到 {len(results['results'])} 个结果 ({color_type}):"
+                    )
 
                     for i, result in enumerate(results["results"][:3], 1):
                         # 根据相似度调整颜色
@@ -166,7 +175,9 @@ async def test_plugin():
                             sim_color = "[1;31m"  # 红色（低相似度）
 
                         e_type_icon = entity_icons.get(result["type"], "")
-                        logger.info(f"  {i}. [1;37m{result['name']}[0m ({e_type_icon} {result['type']}) - 相似度: {sim_color}{result['similarity']:.2f}[0m")
+                        logger.info(
+                            f"  {i}. [1;37m{result['name']}[0m ({e_type_icon} {result['type']}) - 相似度: {sim_color}{result['similarity']:.2f}[0m"
+                        )
                 else:
                     logger.warning(f"❌ 未找到匹配结果")
 
@@ -181,7 +192,9 @@ async def test_plugin():
             else:
                 rate_color = "[1;31m"  # 红色（低成功率）
 
-            logger.info(f"\n{icon} {group_name}测试结果: {success_count}/{total_count} 成功率: {rate_color}{success_rate:.1f}%[0m (耗时: {elapsed_time:.2f}秒)")
+            logger.info(
+                f"\n{icon} {group_name}测试结果: {success_count}/{total_count} 成功率: {rate_color}{success_rate:.1f}%[0m (耗时: {elapsed_time:.2f}秒)"
+            )
             return success_count, total_count
 
         # 按类别执行测试
@@ -193,27 +206,41 @@ async def test_plugin():
 
         # 显示测试进度条
         total_test_groups = 5  # 包含边界测试
-        logger.info(f"\n📊 测试进度: [{'='*0}{' '*(total_test_groups-0)}] 0/{total_test_groups}")
+        logger.info(
+            f"\n📊 测试进度: [{'='*0}{' '*(total_test_groups-0)}] 0/{total_test_groups}"
+        )
 
         # 执行测试并更新进度
         test_results.append(run_test_group(exact_queries, "精确匹配测试"))
-        logger.info(f"\n📊 测试进度: [{'='*1}{' '*(total_test_groups-1)}] 1/{total_test_groups}")
+        logger.info(
+            f"\n📊 测试进度: [{'='*1}{' '*(total_test_groups-1)}] 1/{total_test_groups}"
+        )
 
         test_results.append(run_test_group(typo_queries, "错别字测试"))
-        logger.info(f"\n📊 测试进度: [{'='*2}{' '*(total_test_groups-2)}] 2/{total_test_groups}")
+        logger.info(
+            f"\n📊 测试进度: [{'='*2}{' '*(total_test_groups-2)}] 2/{total_test_groups}"
+        )
 
         test_results.append(run_test_group(short_queries, "短句测试"))
-        logger.info(f"\n📊 测试进度: [{'='*3}{' '*(total_test_groups-3)}] 3/{total_test_groups}")
+        logger.info(
+            f"\n📊 测试进度: [{'='*3}{' '*(total_test_groups-3)}] 3/{total_test_groups}"
+        )
 
         test_results.append(run_test_group(long_queries, "长句测试"))
-        logger.info(f"\n📊 测试进度: [{'='*4}{' '*(total_test_groups-4)}] 4/{total_test_groups}")
+        logger.info(
+            f"\n📊 测试进度: [{'='*4}{' '*(total_test_groups-4)}] 4/{total_test_groups}"
+        )
 
-        logger.info(f"\n📊 测试进度: [{'='*5}{' '*(total_test_groups-5)}] 5/{total_test_groups} ✅")
+        logger.info(
+            f"\n📊 测试进度: [{'='*5}{' '*(total_test_groups-5)}] 5/{total_test_groups} ✅"
+        )
 
         # 计算总体统计信息
         total_success = sum(success for success, _ in test_results)
         total_tests = sum(total for _, total in test_results)
-        overall_success_rate = (total_success / total_tests) * 100 if total_tests > 0 else 0
+        overall_success_rate = (
+            (total_success / total_tests) * 100 if total_tests > 0 else 0
+        )
 
         # 输出测试报告
         logger.info(f"\n{'═'*20} 📈 测试总结报告 📈 {'═'*20}")
@@ -227,7 +254,9 @@ async def test_plugin():
         rating_icons = ["💥", "👎", "👍", "🚀", "🌟"]
 
         test_types = ["精确匹配", "错别字", "短句", "长句", "边界测试"]
-        for i, ((success, total), test_type) in enumerate(zip(test_results, test_types)):
+        for i, ((success, total), test_type) in enumerate(
+            zip(test_results, test_types)
+        ):
             success_rate = (success / total) * 100 if total > 0 else 0
 
             # 根据成功率设置颜色和评价
@@ -251,7 +280,9 @@ async def test_plugin():
             icon = test_icons.get(f"{test_type}测试", "📋")
 
             # 输出格式化的结果行
-            logger.info(f"{icon} {test_type:<12} | {success:<10} | {total:<8} | {color}{success_rate:>7.1f}%[0m | {rating}")
+            logger.info(
+                f"{icon} {test_type:<12} | {success:<10} | {total:<8} | {color}{success_rate:>7.1f}%[0m | {rating}"
+            )
 
         # 输出总计行
         logger.info("─" * 65)
@@ -267,7 +298,9 @@ async def test_plugin():
             total_color = "[1;31m"  # 红色
             total_rating = "⚠️"  # 警告
 
-        logger.info(f"📊 总计        | {total_success:<10} | {total_tests:<8} | {total_color}{overall_success_rate:>7.1f}%[0m | {total_rating}")
+        logger.info(
+            f"📊 总计        | {total_success:<10} | {total_tests:<8} | {total_color}{overall_success_rate:>7.1f}%[0m | {total_rating}"
+        )
         logger.info("═" * 65)
 
         # 输出测试建议
@@ -299,6 +332,7 @@ async def test_plugin():
     except Exception as e:
         logger.error(f"⛔️ 测试过程中发生错误: {e}")
         import traceback
+
         error_msg = traceback.format_exc()
         logger.error(f"[1;31m{error_msg}[0m")
     finally:
@@ -309,6 +343,7 @@ async def test_plugin():
         logger.info(f"💾 测试数据已保存在 './test_data' 目录")
         logger.info(f"📈 测试报告生成时间: {time.strftime('%Y-%m-%d %H:%M:%S')}")
         logger.info(f"{'═'*30}")
+
 
 if __name__ == "__main__":
     asyncio.run(test_plugin())

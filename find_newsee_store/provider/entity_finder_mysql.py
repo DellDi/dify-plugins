@@ -2,8 +2,9 @@ import logging
 from typing import Dict, List, Any
 from pathlib import Path
 import chromadb
-from chromadb.utils import embedding_functions
+# from chromadb.utils import embedding_functions
 import logging
+from utils.embedding import openai_ef
 
 # 导入搜索工具
 from utils.search import ExactMatcher, FuzzyMatcher, VectorSearcher, KeywordExtractor
@@ -43,18 +44,22 @@ class EntityFinderMySQL:
 
         # 初始化组件
         self.db = None
-        self.embedding_function = (
-            embedding_functions.SentenceTransformerEmbeddingFunction(
-                model_name="BAAI/bge-small-zh"  # 中文模型
-            )
-        )
+        self.embedding_function = openai_ef
+        # embedding_functions.SentenceTransformerEmbeddingFunction(
+        #     model_name="BAAI/bge-small-zh"  # 中文模型
+        # )
+
+        # ONNXMiniLM_L6_V2()
+        # )#
 
         # 初始化ChromaDB客户端
-        # 使用内存模式初始化ChromaDB，避免持久化存储问题
+        # 使用默认模式初始化ChromaDB，避免持久化存储问题
         try:
-            # 使用内存模式
-            self.client = chromadb.Client()
-            logger.info("使用内存模式初始化ChromaDB客户端")
+            # 使用默认模式
+            self.client = chromadb.PersistentClient(
+                path=str(self.data_dir / "chroma_db")
+            )
+            logger.info("使用默认模式初始化ChromaDB客户端")
         except Exception as e:
             logger.error(f"ChromaDB初始化失败: {e}")
             raise
@@ -180,7 +185,7 @@ class EntityFinderMySQL:
                 logger.warning(f"清空{entity_type}集合数据失败，将继续添加新数据: {e}")
 
             # 批量大小
-            batch_size = 5000
+            batch_size = 25
             total_docs = len(documents)
             logger.info(
                 f"开始添加{total_docs}条{entity_type}数据到集合，批量大小: {batch_size}"
@@ -215,7 +220,7 @@ class EntityFinderMySQL:
                         ids.append(f"{entity_type}_{i}")
 
                     # 添加当前批次数据到集合
-                    collection.add(documents=texts, metadatas=metadatas, ids=ids)
+                    collection.upsert(documents=texts, metadatas=metadatas, ids=ids)
                     success_count += len(batch_docs)
                     logger.info(
                         f"已添加批次 {start_idx//batch_size + 1}/{(total_docs + batch_size - 1)//batch_size}: "
@@ -323,14 +328,14 @@ class EntityFinderMySQL:
             文档文本
         """
         if entity_type == "project":
-            # 项目: 使用项目名称和全名
-            return f"{data.get('name', '')} {data.get('full_name', '')}"
+            # 项目: 使用项目名称
+            return f"{data.get('name', '')}"
         elif entity_type == "org":
             # 组织: 使用组织
-            return f"{data.get('name', '')} {data.get('short_name', '')}"
+            return f"{data.get('name', '')}"
         elif entity_type == "target":
-            # 指标: 使用指标名称和单位
-            return f"{data.get('name', '')} {data.get('unit', '')}"
+            # 指标: 使用指标名称
+            return f"{data.get('name', '')}"
         return ""
 
     def search(
