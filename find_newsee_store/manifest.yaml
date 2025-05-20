@@ -11,7 +11,7 @@ description:
     - 支持直接响应文本类型数据和json格式的数据
     - 提供对应的标准的业务名称和业务字段的ID
     - 响应时间快，与常规的检索器和RAG方案相比，响应检索时间降低到500ms以内
-icon: delldi_agi_compressed.svg
+icon: icon.svg
 resource:
   memory: 268435456  # 256MB
   permission:
