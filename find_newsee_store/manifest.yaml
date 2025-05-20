@@ -1,4 +1,4 @@
-version: 0.0.2
+version: 0.2.3
 type: plugin
 author: delldi
 name: find_newsee_store
@@ -23,7 +23,7 @@ plugins:
   tools:
     - provider/find_newsee_store.yaml
 meta:
-  version: 0.0.2
+  version: 0.2.3
   arch:
     - amd64
     - arm64

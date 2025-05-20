@@ -21,9 +21,18 @@ credentials_for_provider:
       en_US: mysql://username:password@host:port/database
       zh_Hans: mysql://username:password@host:port/database
     help:
-      en_US: MySQL connection string, can be obtained from the [Newsee jms](http://jms.new-see.com/), ps：`mysql://87bfb7d7-49da-4cce-b745-8e973ad80ea2:pCFW3HNqvRmtwtRg@jms.new-see.com:33061/newsee-view`
+      en_US: MySQL connection string, can be obtained from the [Newsee 堡垒机](http://jms.new-see.com/), ps：`mysql://87bfb7d7-49da-4cce-b745-8e973ad80ea2:pCFW3HNqvRmtwtRg@jms.new-see.com:33061/newsee-view`
       zh_Hans: MySQL 连接字符串, 可以从新视窗的[堡垒机](http://jms.new-see.com/)处获取, 案例：`mysql://87bfb7d7-49da-4cce-b745-8e973ad80ea2:pCFW3HNqvRmtwtRg@jms.new-see.com:33061/newsee-view`
     url: http://jms.new-see.com/
+  embedding_api_key:
+    type: secret-input
+    required: false
+    label:
+      en_US: Tongyi Embedding API Key
+      zh_Hans: 通义文本嵌入模型API密钥
+    placeholder:
+      en_US: sk-xxx
+      zh_Hans: sk-xxx
 tools:
   - tools/find_project.yaml
   - tools/find_target.yaml

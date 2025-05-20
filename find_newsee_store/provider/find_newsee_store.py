@@ -5,10 +5,11 @@ import asyncio
 
 from dify_plugin import ToolProvider
 from dify_plugin.errors.tool import ToolProviderCredentialValidationError
+import shutil
 
 # 导入新的EntityFinderMySQL
 from provider.entity_finder_mysql import EntityFinderMySQL
-
+import utils.provider
 
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message:s)"
@@ -31,12 +32,13 @@ class FindNewseeStoreProvider(ToolProvider):
             credentials: 包含数据库连接字符串的字典，键为'mysql_url'
                 示例: {"mysql_url": "mysql://username:password@host:port/database"}
         """
+        # 检查mysql_url参数是否存在
         if "mysql_url" not in credentials or not credentials["mysql_url"]:
-            raise ToolProviderCredentialValidationError(
-                "缺少MySQL连接字符串(mysql_url)"
-            )
+            raise ToolProviderCredentialValidationError("缺少必要的MySQL连接字符串")
 
-        has_chroma_db = os.path.exists(os.path.join(self.data_dir, "chroma_db", "chroma.sqlite3"))
+        has_chroma_db = os.path.exists(
+            os.path.join(self.data_dir, "chroma_db", "chroma.sqlite3")
+        )
 
         try:
             # 如果目录和chroma_db/chroma.sqlite3文件存在则跳过
@@ -46,30 +48,55 @@ class FindNewseeStoreProvider(ToolProvider):
                 # 创建数据目录
                 os.makedirs(self.data_dir, exist_ok=True)
 
+            # 安全关闭之前的实例
+            if utils.provider.provider_entity_finder is not None:
+                logger.info("关闭现有实体查找器实例...")
+                utils.provider.provider_entity_finder.close_chroma()
+                self.entity_finder and hasattr(self.entity_finder, "close_chroma") and self.entity_finder.close_chroma()
+
+                # 强制垃圾回收
+                import gc
+
+                gc.collect()
+                import time
+
+                time.sleep(1)  # 等待资源释放
+                shutil.rmtree(os.path.join(self.data_dir, "chroma_db"))
+                os.makedirs(self.data_dir, exist_ok=True)
+
+            logger.info("现有实体查找器已关闭")
+
             # 初始化实体查找器
-            self.entity_finder = EntityFinderMySQL(data_dir=self.data_dir)
+            logger.info("开始初始化新的实体查找器...")
+            self.entity_finder = EntityFinderMySQL(
+                data_dir=self.data_dir,
+                embedding_api_key=credentials.get("embedding_api_key"),
+                reset_collections=True,  # 启用集合重置以确保使用正确的嵌入模型
+            )
+            logger.info("实体查找器初始化成功，已启用集合重置")
 
             # 解析MySQL连接字符串
             mysql_url = credentials["mysql_url"]
             db_config = self._parse_mysql_url(mysql_url)
 
-            if not has_chroma_db:
-                # 异步初始化数据库连接
-                loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(loop)
-                loop.run_until_complete(self._initialize_finder(db_config))
-                loop.close()
+            # 异步初始化数据库连接
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            loop.run_until_complete(self._initialize_finder(db_config))
+            loop.close()
 
             # 设置全局实体查找器实例
-            # 先确保模块被导入
-            import utils.provider
-
             utils.provider.provider_entity_finder = self.entity_finder
             logger.info("实体查找器初始化成功")
 
         except Exception as e:
             error_msg = f"初始化实体查找器失败: {str(e)}"
             logger.error(error_msg, exc_info=True)
+
+            if "Cannot run the event loop while another loop is running" in str(e):
+                raise ToolProviderCredentialValidationError(
+                    "还在初始化中，别着急，等几分钟"
+                ) from e
             raise ToolProviderCredentialValidationError(error_msg) from e
 
     def _parse_mysql_url(self, url: str) -> Dict[str, Any]:
@@ -145,6 +172,16 @@ class FindNewseeStoreProvider(ToolProvider):
 
     def __del__(self):
         """清理资源"""
-        if self.entity_finder is not None:
-            self.entity_finder.close()
-            logger.info("实体查找器资源已释放")
+        if hasattr(self, "entity_finder") and self.entity_finder:
+            try:
+                self.entity_finder.close()
+            except Exception as e:
+                logger.error(f"关闭实体查找器时出错: {e}")
+
+        # 强制垃圾回收
+        try:
+            import gc
+
+            gc.collect()
+        except:
+            pass

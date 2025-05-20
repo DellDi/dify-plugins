@@ -2,12 +2,13 @@ import logging
 from typing import Dict, List, Any
 from pathlib import Path
 import chromadb
-# from chromadb.utils import embedding_functions
 import logging
-from utils.embedding import openai_ef
 
 # 导入搜索工具
 from utils.search import ExactMatcher, FuzzyMatcher, VectorSearcher, KeywordExtractor
+
+# 导入ChromaDB组件
+from chromadb.utils import embedding_functions
 
 # 导入数据库连接
 from .database import DatabaseConnection, create_db_url
@@ -26,43 +27,60 @@ DEFAULT_CONFIG = {
     "enable_fuzzy": True,  # 是否启用模糊匹配
     "enable_vector_search": True,  # 是否启用向量搜索
     "default_top_k": 3,  # 默认返回结果数量
+    "batch_size": 25,  # 批量大小
 }
 
 
 class EntityFinderMySQL:
-    """实体查找器，用于从 MySQL 数据库中加载数据并进行实体查找"""
+    """实体查找器，用于从 MySQL 数据库中加载数据并进行实体查找
+    Args:
+        data_dir: 数据存储目录
+        embedding_api_key: 嵌入API密钥
+    """
 
-    def __init__(self, data_dir: str = "./data"):
+    def __init__(self, data_dir: str = "./data", embedding_api_key: str = None, reset_collections: bool = False):
         """
         初始化实体查找器
 
         Args:
             data_dir: 数据存储目录
+            embedding_api_key: 嵌入API密钥
+            reset_collections: 是否重置所有集合（当切换嵌入模型时需要设置为True）
         """
         self.data_dir = Path(data_dir)
         self.data_dir.mkdir(parents=True, exist_ok=True)
+        self.reset_collections = reset_collections
 
         # 初始化组件
         self.db = None
-        self.embedding_function = openai_ef
-        # embedding_functions.SentenceTransformerEmbeddingFunction(
-        #     model_name="BAAI/bge-small-zh"  # 中文模型
-        # )
 
-        # ONNXMiniLM_L6_V2()
-        # )#
+        # 首先初始化ChromaDB客户端
+        chroma_db_path = self.data_dir / "chroma_db"
 
-        # 初始化ChromaDB客户端
-        # 使用默认模式初始化ChromaDB，避免持久化存储问题
         try:
-            # 使用默认模式
-            self.client = chromadb.PersistentClient(
-                path=str(self.data_dir / "chroma_db")
-            )
+            self.client = chromadb.PersistentClient(path=str(chroma_db_path))
             logger.info("使用默认模式初始化ChromaDB客户端")
         except Exception as e:
             logger.error(f"ChromaDB初始化失败: {e}")
             raise
+
+        # 设置嵌入函数
+        if embedding_api_key:
+            DEFAULT_CONFIG["batch_size"] = 25
+            self.embedding_function = embedding_functions.OpenAIEmbeddingFunction(
+                api_key=embedding_api_key,
+                api_base="https://dashscope.aliyuncs.com/compatible-mode/v1",
+                api_type="tongyi",
+                api_version="v2",
+                model_name="text-embedding-v2",
+            )
+        else:
+            DEFAULT_CONFIG["batch_size"] = 5000
+            self.embedding_function = (
+                embedding_functions.SentenceTransformerEmbeddingFunction(
+                    model_name="BAAI/bge-small-zh"  # 中文小型模型
+                )
+            )
 
         # 初始化搜索器
         self.exact_matcher = ExactMatcher()
@@ -162,16 +180,20 @@ class EntityFinderMySQL:
             logger.info(f"没有{entity_type}数据需要添加")
             return
 
+        collection_name = f"{entity_type}s"
+
+        # 如果集合不存在，则创建
         if entity_type not in self.collections:
-            logger.warning(f"集合{entity_type}不存在，尝试创建...")
+            logger.info(f"创建新集合: {collection_name}")
             try:
                 self.collections[entity_type] = self.client.create_collection(
-                    name=f"{entity_type}s",
+                    name=collection_name,
                     embedding_function=self.embedding_function,
                     metadata={"description": f"{entity_type}信息"},
                 )
+                logger.info(f"成功创建集合{collection_name}")
             except Exception as e:
-                logger.error(f"创建{entity_type}集合失败: {e}")
+                logger.error(f"创建集合{collection_name}失败: {e}")
                 return
 
         collection = self.collections[entity_type]
@@ -185,7 +207,7 @@ class EntityFinderMySQL:
                 logger.warning(f"清空{entity_type}集合数据失败，将继续添加新数据: {e}")
 
             # 批量大小
-            batch_size = 25
+            batch_size = DEFAULT_CONFIG["batch_size"]
             total_docs = len(documents)
             logger.info(
                 f"开始添加{total_docs}条{entity_type}数据到集合，批量大小: {batch_size}"
@@ -419,12 +441,32 @@ class EntityFinderMySQL:
                 "results": [],
                 "message": error_msg,
             }
+    def close_chroma(self):
+        """释放ChromaDB资源"""
+        if hasattr(self, "client") and self.client:
+            try:
+                # ChromaDB没有显式的close方法，但我们可以将引用设为None
+                # 这有助于Python的垃圾回收机制回收资源
+                self.client = None
+                logger.info("ChromaDB客户端引用已清除")
+            except Exception as e:
+                logger.warning(f"清除ChromaDB客户端引用时出错: {e}")
+        # 强制触发Python垃圾回收
+        import gc
+
+        gc.collect()
+
+        logger.info("实体查找器资源已全部释放")
 
     def close(self):
-        """释放资源"""
+        """释放资源，确保所有连接都被正确关闭"""
+        # 关闭数据库连接
         if hasattr(self, "db") and self.db:
-            self.db.close()
-        logger.info("实体查找器已关闭")
+            try:
+                self.db.close()
+                logger.info("数据库连接已关闭")
+            except Exception as e:
+                logger.warning(f"关闭数据库连接时出错: {e}")
 
     def __enter__(self):
         return self

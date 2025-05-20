@@ -10,7 +10,7 @@
 - **多级匹配策略**：
   - 精确匹配：直接识别文本中的实体名称
   - 模糊匹配：基于编辑距离的模糊匹配，处理拼写错误
-  - 向量检索：使用 Sentence-BERT 进行语义搜索
+  - 向量检索：使用通义文本嵌入模型 v2 或 bge-small-zh 进行语义搜索
 - **多实体类型**：支持项目(project)、组织(org)和指标(target)三种实体类型
 - **数据库集成**：直接从 MySQL 数据库加载和更新实体数据
 - **可配置**：灵活的阈值和开关配置
@@ -73,7 +73,10 @@ graph TD
 
 ```bash
 # 安装依赖
-uv pip install -r requirements.txt
+python -m venv venv
+source venv/bin/activate
+
+pip install -r requirements.txt
 ```
 
 ### 2. 配置数据库
@@ -128,11 +131,13 @@ if __name__ == "__main__":
 
 ```python
 DEFAULT_CONFIG = {
-    "fuzzy_match_threshold": 0.8,  # 模糊匹配阈值 (0-1)
-    "vector_search_threshold": 0.6,  # 向量搜索阈值 (0-1)
+    "fuzzy_match_threshold": 0.6,  # 模糊匹配阈值 - 降低以捕获更多结果
+    "vector_search_threshold": 0.3,  # 向量搜索阈值 - 降低以捕获更多结果
     "top_k": 3,  # 默认返回结果数量
     "enable_fuzzy": True,  # 是否启用模糊匹配
     "enable_vector_search": True,  # 是否启用向量搜索
+    "default_top_k": 3,  # 默认返回结果数量
+    "batch_size": 25,  # 批量大小
 }
 ```
 
@@ -259,15 +264,18 @@ python -m tests.test_plugin
 
 ### 响应字段说明
 
-| 字段名 | 类型 | 说明 |
-|--------|------|------|
-| success | boolean | 请求是否成功 |
-| query | string | 原始查询文本 |
-| entities | array | 匹配到的实体列表 |
-| - id | string | 实体ID |
-| - name | string | 实体名称 |
-| - type | string | 实体类型 (project/org/target) |
-| - confidence | float | 置信度 (0-1) |
-| - match_type | string | 匹配类型 (exact/fuzzy/vector) |
-| message | string | 处理结果消息 |
+| 字段名       | 类型    | 说明                          |
+| ------------ | ------- | ----------------------------- |
+| success      | boolean | 请求是否成功                  |
+| query        | string  | 原始查询文本                  |
+| entities     | array   | 匹配到的实体列表              |
+| - id         | string  | 实体 ID                       |
+| - name       | string  | 实体名称                      |
+| - type       | string  | 实体类型 (project/org/target) |
+| - confidence | float   | 置信度 (0-1)                  |
+| - match_type | string  | 匹配类型 (exact/fuzzy/vector) |
+| message      | string  | 处理结果消息                  |
+
+```
+
 ```
