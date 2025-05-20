@@ -42,10 +42,10 @@ async def test_plugin():
 
     # 数据库配置 - 请替换为您的实际数据库信息
     db_config = {
-        "host": "localhost",
+        "host": "192.168.1.52",
         "port": 3306,
         "user": "root",
-        "password": "zd808611",
+        "password": "Newsee888",
         "database": "newsee-view",
     }
 
@@ -53,11 +53,9 @@ async def test_plugin():
     finder = EntityFinderMySQL(data_dir="./test_data")
 
     try:
-        # 初始化数据库连接
-        # print("正在初始化数据库连接...")
-        # if not finder.client:
-        #     await finder.initialize(db_config)
-        # print("数据库连接初始化成功")
+        # 修改后
+        if not hasattr(finder, 'db') or not finder.db or not finder.db.is_connected():
+            await finder.initialize(db_config)
 
         # 测试搜索功能
         # 1. 精确匹配测试案例

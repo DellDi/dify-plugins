@@ -3,13 +3,10 @@ from typing import Dict, List, Any
 from pathlib import Path
 import chromadb
 from chromadb.utils import embedding_functions
-import asyncio
 import logging
 
 # 导入搜索工具
 from utils.search import ExactMatcher, FuzzyMatcher, VectorSearcher, KeywordExtractor
-import jieba
-import jieba.analyse
 
 # 导入数据库连接
 from .database import DatabaseConnection, create_db_url
@@ -46,8 +43,10 @@ class EntityFinderMySQL:
 
         # 初始化组件
         self.db = None
-        self.embedding_function = embedding_functions.SentenceTransformerEmbeddingFunction(
-            model_name="paraphrase-multilingual-MiniLM-L12-v2"  # 多语言模型，支持中文
+        self.embedding_function = (
+            embedding_functions.SentenceTransformerEmbeddingFunction(
+                model_name="BAAI/bge-small-zh"  # 中文模型
+            )
         )
 
         # 初始化ChromaDB客户端
@@ -62,8 +61,12 @@ class EntityFinderMySQL:
 
         # 初始化搜索器
         self.exact_matcher = ExactMatcher()
-        self.fuzzy_matcher = FuzzyMatcher(threshold=DEFAULT_CONFIG["fuzzy_match_threshold"])
-        self.vector_searcher = VectorSearcher(threshold=DEFAULT_CONFIG["vector_search_threshold"])
+        self.fuzzy_matcher = FuzzyMatcher(
+            threshold=DEFAULT_CONFIG["fuzzy_match_threshold"]
+        )
+        self.vector_searcher = VectorSearcher(
+            threshold=DEFAULT_CONFIG["vector_search_threshold"]
+        )
         self.keyword_extractor = KeywordExtractor()
 
         # 初始化集合
@@ -160,7 +163,7 @@ class EntityFinderMySQL:
                 self.collections[entity_type] = self.client.create_collection(
                     name=f"{entity_type}s",
                     embedding_function=self.embedding_function,
-                    metadata={"description": f"{entity_type}信息"}
+                    metadata={"description": f"{entity_type}信息"},
                 )
             except Exception as e:
                 logger.error(f"创建{entity_type}集合失败: {e}")
@@ -219,9 +222,13 @@ class EntityFinderMySQL:
                         f"{start_idx+1}-{end_idx} 条{entity_type}数据"
                     )
                 except Exception as e:
-                    logger.error(f"添加{entity_type}数据批次{start_idx//batch_size + 1}失败: {e}")
+                    logger.error(
+                        f"添加{entity_type}数据批次{start_idx//batch_size + 1}失败: {e}"
+                    )
 
-            logger.info(f"完成添加{success_count}/{total_docs}条{entity_type}数据到集合")
+            logger.info(
+                f"完成添加{success_count}/{total_docs}条{entity_type}数据到集合"
+            )
         except Exception as e:
             logger.error(f"添加{entity_type}数据到集合时发生错误: {e}")
             # 不抛出异常，确保我们仍然可以继续处理其他实体类型
@@ -344,10 +351,14 @@ class EntityFinderMySQL:
             if top_k is None:
                 top_k = self.config["default_top_k"]
 
-            logger.info(f"开始搜索: 查询='{query}', 实体类型={entity_type}, top_k={top_k}")
+            logger.info(
+                f"开始搜索: 查询='{query}', 实体类型={entity_type}, top_k={top_k}"
+            )
 
             # 1. 尝试精确匹配
-            exact_results = self.exact_matcher.search(query, self.collections, entity_type)
+            exact_results = self.exact_matcher.search(
+                query, self.collections, entity_type
+            )
             if exact_results["found"]:
                 logger.info(f"找到精确匹配: {len(exact_results['results'])}个结果")
                 return {
@@ -359,7 +370,9 @@ class EntityFinderMySQL:
                 }
             logger.info(f"未找到精确匹配结果: 查询='{query}', 实体类型={entity_type}")
             # 2. 尝试模糊匹配
-            fuzzy_results = self.fuzzy_matcher.search(query, self.collections, entity_type, top_k)
+            fuzzy_results = self.fuzzy_matcher.search(
+                query, self.collections, entity_type, top_k
+            )
             if fuzzy_results["found"]:
                 logger.info(f"找到模糊匹配: {len(fuzzy_results['results'])}个结果")
                 return {
@@ -371,7 +384,9 @@ class EntityFinderMySQL:
                 }
             logger.info(f"未找到模糊匹配结果: 查询='{query}', 实体类型={entity_type}")
             # 3. 尝试向量搜索
-            vector_results = self.vector_searcher.search(query, self.collections, entity_type, top_k)
+            vector_results = self.vector_searcher.search(
+                query, self.collections, entity_type, top_k
+            )
             if vector_results["found"]:
                 logger.info(f"找到向量搜索结果: {len(vector_results['results'])}个结果")
                 return {

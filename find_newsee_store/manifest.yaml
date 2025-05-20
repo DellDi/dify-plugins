@@ -13,7 +13,7 @@ description:
     - 响应时间快，与常规的检索器和RAG方案相比，响应检索时间降低到500ms以内
 icon: delldi_agi_compressed.png
 resource:
-  memory: 268435456
+  memory: 868435456
   permission:
     tool:
       enabled: true
