@@ -36,42 +36,131 @@ class FindNewseeStoreProvider(ToolProvider):
         if "mysql_url" not in credentials or not credentials["mysql_url"]:
             raise ToolProviderCredentialValidationError("缺少必要的MySQL连接字符串")
 
-        has_chroma_db = os.path.exists(
-            os.path.join(self.data_dir, "chroma_db", "chroma.sqlite3")
-        )
+        # 添加二级变量计算
+        reset_collections = False
+        
+        # 先定义模型特定目录变量，确保全局可访问
+        global model_specific_dir
+
+        # 获取当前的嵌入模型类型
+        current_embedding_model = "local" if not credentials.get("embedding_api_key") else "tongyi"
+        
+        # 预先设置模型特定目录，确保在任何条件下都可访问
+        if current_embedding_model == "local":
+            model_specific_dir = os.path.join(self.data_dir, "chroma_db_local")
+        else:
+            model_specific_dir = os.path.join(self.data_dir, "chroma_db_tongyi")
+
+        # 如果存在配置文件，读取上次使用的嵌入模型类型
+        config_file = os.path.join(self.data_dir, "config.txt")
+        previous_embedding_model = None
+        if os.path.exists(config_file):
+            try:
+                with open(config_file, "r") as f:
+                    previous_embedding_model = f.read().strip()
+            except Exception as e:
+                logger.warning(f"读取配置文件失败: {e}")
+
+        # 判断是否需要重置集合
+        if previous_embedding_model and previous_embedding_model != current_embedding_model:
+            reset_collections = True
+            logger.info(f"检测到嵌入模型已更改: {previous_embedding_model} -> {current_embedding_model}，将重置集合")
 
         try:
-            # 如果目录和chroma_db/chroma.sqlite3文件存在则跳过
-            if os.path.exists(self.data_dir) and has_chroma_db:
-                logger.info("数据目录和chroma.sqlite3文件已存在，跳过创建")
-            else:
-                # 创建数据目录
-                os.makedirs(self.data_dir, exist_ok=True)
+            # 创建数据目录
+            os.makedirs(self.data_dir, exist_ok=True)
 
-            # 安全关闭之前的实例
-            if utils.provider.provider_entity_finder is not None:
-                logger.info("关闭现有实体查找器实例...")
-                utils.provider.provider_entity_finder.close_chroma()
-                self.entity_finder and hasattr(self.entity_finder, "close_chroma") and self.entity_finder.close_chroma()
+            # 选择使用哪个存储目录，基于当前的嵌入模型
+            if reset_collections:
+                logger.info("嵌入模型已更改，采用多目录策略...")
+                
+                # 安全关闭之前的实例并释放资源
+                if utils.provider.provider_entity_finder is not None:
+                    logger.info("关闭现有实体查找器实例...")
+                    try:
+                        utils.provider.provider_entity_finder.close_chroma()
+                    except Exception as e:
+                        logger.warning(f"关闭全局实体查找器失败: {e}")
+                    
+                if self.entity_finder and hasattr(self.entity_finder, "close_chroma"):
+                    try:
+                        self.entity_finder.close_chroma()
+                    except Exception as e:
+                        logger.warning(f"关闭实体查找器失败: {e}")
 
                 # 强制垃圾回收
                 import gc
-
                 gc.collect()
                 import time
-
                 time.sleep(1)  # 等待资源释放
-                shutil.rmtree(os.path.join(self.data_dir, "chroma_db"))
-                os.makedirs(self.data_dir, exist_ok=True)
-
-            logger.info("现有实体查找器已关闭")
+                
+                # 清除引用
+                self.entity_finder = None
+                utils.provider.provider_entity_finder = None
+                gc.collect()
+                
+                # 基于当前使用的嵌入模型类型，确认我们选择了正确的目录
+                if current_embedding_model == "local":
+                    logger.info(f"使用本地模型的数据目录: {model_specific_dir}")
+                else:  # tongyi
+                    logger.info(f"使用通义模型的数据目录: {model_specific_dir}")
+                
+                # 创建目录（如果不存在）
+                try:
+                    os.makedirs(model_specific_dir, exist_ok=True)
+                    logger.info(f"已确保数据目录 {model_specific_dir} 存在")
+                except Exception as e:
+                    logger.warning(f"创建目录 {model_specific_dir} 失败: {e}")
+                
+                # 创建非确定性链接，指向当前所使用的目录
+                try:
+                    current_symlink = os.path.join(self.data_dir, "chroma_db")
+                    
+                    # 如果已经存在链接或目录，先删除
+                    if os.path.exists(current_symlink) or os.path.islink(current_symlink):
+                        if os.path.islink(current_symlink):
+                            os.unlink(current_symlink)  # 删除现有的符号链接
+                            logger.info(f"已删除现有的符号链接: {current_symlink}")
+                        else:
+                            # 如果是目录而不是链接，将其重命名为备份
+                            backup_dir = f"{current_symlink}_backup_{int(time.time())}"
+                            os.rename(current_symlink, backup_dir)
+                            logger.info(f"已将非链接的 chroma_db 目录备份为: {backup_dir}")
+                            
+                    # 创建新的符号链接
+                    # 在macOS和Linux上使用相对路径创建符号链接
+                    relative_path = os.path.relpath(model_specific_dir, os.path.dirname(current_symlink))
+                    os.symlink(relative_path, current_symlink)
+                    logger.info(f"已创建符号链接: {current_symlink} -> {relative_path}")
+                except Exception as e:
+                    logger.error(f"创建符号链接失败: {e}")
+                    # 如果创建符号链接失败，则直接复制整个目录
+                    try:
+                        if os.path.exists(current_symlink):
+                            shutil.rmtree(current_symlink)
+                        # 我们这里如果太大、复制会很慢，用mkdir替代
+                        os.makedirs(current_symlink, exist_ok=True)
+                        logger.info(f"创建符号链接失败，改为直接创建目录: {current_symlink}")
+                    except Exception as e2:
+                        logger.error(f"创建目录也失败: {e2}")
+                
+            logger.info("现有实体查找器资源已处理")
+            
+            # 将当前嵌入模型类型保存到配置文件
+            try:
+                with open(config_file, "w") as f:
+                    f.write(current_embedding_model)
+                logger.info(f"已将当前嵌入模型类型({current_embedding_model})保存到配置文件")
+            except Exception as e:
+                logger.warning(f"写入配置文件失败: {e}")
 
             # 初始化实体查找器
             logger.info("开始初始化新的实体查找器...")
+            # 使用模型特定目录而不是符号链接目录
             self.entity_finder = EntityFinderMySQL(
-                data_dir=self.data_dir,
+                data_dir=model_specific_dir,  # 使用模型特定目录
                 embedding_api_key=credentials.get("embedding_api_key"),
-                reset_collections=True,  # 启用集合重置以确保使用正确的嵌入模型
+                reset_collections=False,  # 无需重置集合，因为我们使用的是模型特定目录
             )
             logger.info("实体查找器初始化成功，已启用集合重置")
 

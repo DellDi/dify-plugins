@@ -13,12 +13,15 @@ description:
     - 响应时间快，与常规的检索器和RAG方案相比，响应检索时间降低到500ms以内
 icon: icon.svg
 resource:
-  memory: 268435456  # 256MB
+  memory: 268435456 # 256MB
   permission:
     tool:
       enabled: true
     endpoint:
       enabled: true
+    storage:
+      enabled: true
+      size: 1048576
 plugins:
   tools:
     - provider/find_newsee_store.yaml

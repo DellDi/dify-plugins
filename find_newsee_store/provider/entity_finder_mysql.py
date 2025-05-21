@@ -50,16 +50,33 @@ class EntityFinderMySQL:
         self.data_dir = Path(data_dir)
         self.data_dir.mkdir(parents=True, exist_ok=True)
         self.reset_collections = reset_collections
+        self.embedding_api_key = embedding_api_key
+        
+        # 确定使用的嵌入模型类型
+        self.embedding_model_type = "tongyi" if embedding_api_key else "local"
 
         # 初始化组件
         self.db = None
 
-        # 首先初始化ChromaDB客户端
+        # 初始化ChromaDB客户端
         chroma_db_path = self.data_dir / "chroma_db"
 
         try:
-            self.client = chromadb.PersistentClient(path=str(chroma_db_path))
-            logger.info("使用默认模式初始化ChromaDB客户端")
+            # 重置集合时，需要注意客户端初始化方式
+            client_settings = {}
+            
+            # 配置非保护模式，确保不启动额外的进程
+            client_settings = {
+                "allow_reset": True,  # 允许重置
+                "anonymized_telemetry": False  # 禁用遥测
+            }
+            
+            # 强制使用可再生模式
+            self.client = chromadb.PersistentClient(
+                path=str(chroma_db_path),
+                settings=chromadb.Settings(**client_settings)
+            )
+            logger.info("使用增强模式初始化ChromaDB客户端")
         except Exception as e:
             logger.error(f"ChromaDB初始化失败: {e}")
             raise
@@ -93,23 +110,77 @@ class EntityFinderMySQL:
         self.keyword_extractor = KeywordExtractor()
 
         # 初始化集合
-        self.collections = {
-            "project": self.client.get_or_create_collection(
-                name="projects",
-                embedding_function=self.embedding_function,
-                metadata={"description": "项目信息"},
-            ),
-            "org": self.client.get_or_create_collection(
-                name="orgs",
-                embedding_function=self.embedding_function,
-                metadata={"description": "组织信息"},
-            ),
-            "target": self.client.get_or_create_collection(
-                name="targets",
-                embedding_function=self.embedding_function,
-                metadata={"description": "指标信息"},
-            ),
-        }
+        self.collections = {}
+        
+        # 如果需要重置集合，尝试清理已存在的全部集合
+        if self.reset_collections:
+            try:
+                logger.info("正在重置所有集合...")
+                try:
+                    # 先获取所有集合列表
+                    all_collections = self.client.list_collections()
+                    
+                    # 删除我们管理的集合
+                    for collection_name in ["projects", "orgs", "targets"]:
+                        try:
+                            if collection_name in [c.name for c in all_collections]:
+                                self.client.delete_collection(collection_name)
+                                logger.info(f"已删除集合: {collection_name}")
+                        except Exception as e:
+                            logger.warning(f"删除集合 {collection_name} 时出错: {e}")
+                            
+                    # 也尝试删除任何孤立的集合（那些不在我们预期列表中的）
+                    for collection in all_collections:
+                        if collection.name not in ["projects", "orgs", "targets"]:
+                            try:
+                                self.client.delete_collection(collection.name)
+                                logger.info(f"已删除孤立集合: {collection.name}")
+                            except Exception as e:
+                                logger.warning(f"删除孤立集合 {collection.name} 时出错: {e}")
+                                
+                    # 检查并清理UUID目录
+                    self._clean_uuid_directories()
+                except Exception as e:
+                    logger.warning(f"清理集合失败: {e}")
+            except Exception as e:
+                logger.warning(f"重置集合过程中出错: {e}")
+        
+        # 创建或获取集合
+        try:
+            # 定义需要创建的集合及其配置
+            collections_config = {
+                "project": {"name": "projects", "description": "项目信息"},
+                "org": {"name": "orgs", "description": "组织信息"},
+                "target": {"name": "targets", "description": "指标信息"},
+            }
+            
+            # 如果不需要重置集合，可以尝试直接使用现有的
+            for entity_type, config in collections_config.items():
+                collection_name = config["name"]
+                try:
+                    # 尝试获取现有集合
+                    if not self.reset_collections and collection_name in [c.name for c in self.client.list_collections()]:
+                        self.collections[entity_type] = self.client.get_collection(
+                            name=collection_name,
+                            embedding_function=self.embedding_function
+                        )
+                        logger.info(f"获取到现有集合: {collection_name}")
+                    else:
+                        # 如果不存在或需要重置，则创建新的
+                        self.collections[entity_type] = self.client.get_or_create_collection(
+                            name=collection_name,
+                            embedding_function=self.embedding_function,
+                            metadata={"description": config["description"]},
+                        )
+                        logger.info(f"创建或获取集合: {collection_name}")
+                except Exception as e:
+                    logger.error(f"初始化集合 {collection_name} 时出错: {e}")
+                    raise
+                    
+            logger.info("所有集合已成功初始化")  
+        except Exception as e:
+            logger.error(f"初始化集合时出错: {e}")
+            raise
 
         # 加载配置
         self.config = DEFAULT_CONFIG.copy()
@@ -175,36 +246,52 @@ class EntityFinderMySQL:
         logger.info("数据加载完成")
 
     def _add_documents_to_collection(self, entity_type: str, documents: List[Dict]):
-        """将文档添加到对应的集合中"""
+        """将文档添加到对应的集合中、使用upsert模式"""
         if not documents:
             logger.info(f"没有{entity_type}数据需要添加")
             return
 
         collection_name = f"{entity_type}s"
 
-        # 如果集合不存在，则创建
+        # 如果集合不存在，则获取或创建
         if entity_type not in self.collections:
-            logger.info(f"创建新集合: {collection_name}")
+            logger.info(f"集合 {collection_name} 引用不存在，获取或创建")
             try:
-                self.collections[entity_type] = self.client.create_collection(
-                    name=collection_name,
-                    embedding_function=self.embedding_function,
-                    metadata={"description": f"{entity_type}信息"},
-                )
-                logger.info(f"成功创建集合{collection_name}")
+                # 使用跟其他地方相同的逻辑获取或创建集合
+                if not self.reset_collections and collection_name in [c.name for c in self.client.list_collections()]:
+                    self.collections[entity_type] = self.client.get_collection(
+                        name=collection_name,
+                        embedding_function=self.embedding_function
+                    )
+                    logger.info(f"使UPSERT模式获取到现有集合: {collection_name}")
+                else:
+                    # 如果需要重置，则先删除再创建
+                    if collection_name in [c.name for c in self.client.list_collections()]:
+                        self.client.delete_collection(collection_name)
+                        logger.info(f"已删除现有集合{collection_name}以重新创建")
+                    
+                    # 创建新集合
+                    self.collections[entity_type] = self.client.create_collection(
+                        name=collection_name,
+                        embedding_function=self.embedding_function,
+                        metadata={"description": f"{entity_type}信息"}
+                    )
+                    logger.info(f"成功创建新集合{collection_name}")
             except Exception as e:
-                logger.error(f"创建集合{collection_name}失败: {e}")
+                logger.error(f"获取或创建集合{collection_name}失败: {e}")
                 return
 
         collection = self.collections[entity_type]
 
         try:
-            # 清空现有数据
+            # 检查当前数据量
             try:
-                collection.delete(where={"id": {"$ne": ""}})
-                logger.info(f"已清空{entity_type}集合中的现有数据")
+                count_result = collection.count()
+                logger.info(f"当前{entity_type}集合数据量: {count_result}")
             except Exception as e:
-                logger.warning(f"清空{entity_type}集合数据失败，将继续添加新数据: {e}")
+                logger.warning(f"获取{entity_type}集合数据量失败: {e}")
+                
+            # 采用upsert模式，不需要先删除旧数据
 
             # 批量大小
             batch_size = DEFAULT_CONFIG["batch_size"]
@@ -441,21 +528,94 @@ class EntityFinderMySQL:
                 "results": [],
                 "message": error_msg,
             }
+    def _clean_uuid_directories(self):
+        """清理ChromaDB目录中的UUID格式子目录"""
+        try:
+            import os
+            # 确定chroma_db目录路径
+            chroma_dir = os.path.join(self.data_dir, "chroma_db")
+            if not os.path.exists(chroma_dir):
+                logger.info(f"ChromaDB目录 {chroma_dir} 不存在，跳过清理")
+                return
+                
+            # 查找所有UUID格式的子目录（大部分的UUID目录都有特定的长度和格式）
+            uuid_dirs = []
+            for item in os.listdir(chroma_dir):
+                item_path = os.path.join(chroma_dir, item)
+                # 排除重要的非UUID文件
+                if item in ['chroma.sqlite3', 'chroma.sqlite3-shm', 'chroma.sqlite3-wal', '.uuid']:
+                    continue
+                    
+                # 如果是目录且看起来像UUID（建立一个简单的检测）
+                if os.path.isdir(item_path) and (
+                    len(item) > 30 and '-' in item or  # 典型的UUID形式
+                    (len(item) > 10 and all(c in '0123456789abcdef-' for c in item.lower()))  # 十六进制字符
+                ):
+                    uuid_dirs.append(item_path)
+                    
+            if uuid_dirs:
+                logger.info(f"发现 {len(uuid_dirs)} 个可能的UUID格式目录需要清理")
+                
+                # 首先关闭当前客户端，确保资源释放
+                if hasattr(self, "client") and self.client:
+                    # 清除引用但不完全释放所有资源
+                    self.collections = {}
+                    
+                # 尝试删除这些UUID目录
+                success_count = 0
+                for dir_path in uuid_dirs:
+                    try:
+                        import shutil
+                        shutil.rmtree(dir_path, ignore_errors=True)
+                        success_count += 1
+                    except Exception as e:
+                        logger.warning(f"删除UUID目录 {dir_path} 失败: {e}")
+                        
+                logger.info(f"成功清理了 {success_count}/{len(uuid_dirs)} 个UUID目录")
+            else:
+                logger.info("没有发现需要清理的UUID目录")
+                
+        except Exception as e:
+            logger.warning(f"UUID目录清理失败: {e}")
+
     def close_chroma(self):
         """释放ChromaDB资源"""
+        # 先清理UUID目录以防止资源累积
+        try:
+            self._clean_uuid_directories()
+        except Exception as e:
+            logger.warning(f"UUID目录清理失败: {e}")
+            
         if hasattr(self, "client") and self.client:
             try:
-                # ChromaDB没有显式的close方法，但我们可以将引用设为None
-                # 这有助于Python的垃圾回收机制回收资源
+                # 先清除集合引用
+                if hasattr(self, "collections"):
+                    for name in list(self.collections.keys()):
+                        self.collections[name] = None
+                    self.collections.clear()
+                
+                # 尝试关闭底层SQLite连接
+                # ChromaDB没有显式的close方法，我们需要更积极地释放资源
+                # 清理持久化客户端资源
+                if hasattr(self.client, "_producer"):
+                    if hasattr(self.client._producer, "storage_context"):
+                        if hasattr(self.client._producer.storage_context, "sqlite_connection"):
+                            try:
+                                self.client._producer.storage_context.sqlite_connection.close()
+                                logger.info("已关闭ChromaDB的SQLite连接")
+                            except Exception as e:
+                                logger.warning(f"关闭SQLite连接时出错: {e}")
+                
+                # 将客户端引用设为None
                 self.client = None
                 logger.info("ChromaDB客户端引用已清除")
             except Exception as e:
                 logger.warning(f"清除ChromaDB客户端引用时出错: {e}")
+                
         # 强制触发Python垃圾回收
         import gc
-
         gc.collect()
-
+        
         logger.info("实体查找器资源已全部释放")
 
     def close(self):

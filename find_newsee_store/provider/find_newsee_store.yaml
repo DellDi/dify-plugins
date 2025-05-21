@@ -29,10 +29,15 @@ credentials_for_provider:
     required: false
     label:
       en_US: Tongyi Embedding API Key
-      zh_Hans: 通义文本嵌入模型API密钥
+      zh_Hans: 通义密钥
     placeholder:
-      en_US: sk-xxx
-      zh_Hans: sk-xxx
+      en_US: sk-xxx （耗时较长请耐心等待）
+      zh_Hans: sk-xxx（耗时较长请耐心等待）
+    help:
+      en_US: Tongyi Embedding API Key, can be obtained from the [Tongyi](https://www.aliyun.com/product/ai/tongyi)
+      zh_Hans: 通义文本嵌入模型API密钥, 可以从[通义](https://www.aliyun.com/product/ai/tongyi)处获取
+    url: https://bailian.console.aliyun.com/console?tab=model#/model-market
+
 tools:
   - tools/find_project.yaml
   - tools/find_target.yaml
